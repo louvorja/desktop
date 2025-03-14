@@ -6,7 +6,8 @@ uses
   Windows, Messages, SysUtils, Variants, Classes, Graphics, Controls, Forms,
   Dialogs, ExtCtrls, StdCtrls, ValEdit, OleCtrls, ShellApi, bsSkinCtrls,
   bsSkinShellCtrls, BusinessSkinForm,
-  bsPngImageList, WinInet;
+  bsPngImageList, WinInet, bsDialogs, Vcl.ComCtrls, IdBaseComponent,
+  IdAntiFreezeBase, IdAntiFreeze;
 
 type
   TfNovaVersao = class(TForm)
@@ -25,10 +26,14 @@ type
     lblVAtu: TbsSkinStdLabel;
     lbl3: TbsSkinStdLabel;
     lblVNova: TbsSkinStdLabel;
+    progress: TProgressBar;
+    Timer1: TTimer;
     procedure FormKeyUp(Sender: TObject; var Key: Word; Shift: TShiftState);
     procedure bsSkinButton2Click(Sender: TObject);
     procedure bsSkinButton3Click(Sender: TObject);
     procedure FormCreate(Sender: TObject);
+    procedure FormActivate(Sender: TObject);
+    procedure Timer1Timer(Sender: TObject);
   private
     setup_dir: string;
   public
@@ -42,7 +47,7 @@ var
 implementation
 
 uses
-  fmMenu, fmAtualiza, fmIniciando;
+  fmMenu, fmAtualiza, fmIniciando, dmComponentes;
 
 
 {$R *.dfm}
@@ -55,7 +60,6 @@ end;
 procedure TfNovaVersao.bsSkinButton3Click(Sender: TObject);
 var
   lista: TStringList;
-  arquivo: string;
   Flags: Cardinal;
   inst: string;
 begin
@@ -66,28 +70,20 @@ begin
     Exit;
   end;
 
-  inst := fmIndex.param.Strings.Values['instalador'+fIniciando.LANG];
-  setup_dir := inst;
-//  DeleteFile(arquivo);
-  arquivo := ExtractFilePath(application.ExeName)+setup_dir;
-  lista := TStringList.Create;
-  lista.Add(setup_dir);
+  progress.Visible := true;
+  bsSkinButton3.Enabled := false;
+  bsSkinButton2.Enabled := false;
+  lbl1.Caption := 'Aguarde... atualizando o programa...';
 
-  fIniciando.AppCreateForm(TfAtualiza, fAtualiza);
-  fAtualiza.arquivos := lista;
-  fAtualiza.ShowModal;
+  timer1.Enabled := true;
+end;
 
-
-  if not FileExists(arquivo) then
-  begin
-    Application.MessageBox('Não foi possível baixar/executar a atualização do menu!'+#13#10+'Favor, acesse o site https://louvorja.com.br/ e efetue a instalação manual da nova versão.',fmIndex.TITULO,mb_ok+mb_iconerror);
-    Exit;
-  end
-  else
-  begin
-    fmIndex.abrirArquivo(arquivo);
-    Application.Terminate;
-  end;
+procedure TfNovaVersao.FormActivate(Sender: TObject);
+begin
+  progress.Visible := false;
+  bsSkinButton3.Enabled := true;
+  bsSkinButton2.Enabled := true;
+  lbl1.Caption := 'Há uma nova versão disponível de sua coletânea.';
 end;
 
 procedure TfNovaVersao.FormCreate(Sender: TObject);
@@ -109,6 +105,43 @@ end;
 procedure TfNovaVersao.FormKeyUp(Sender: TObject; var Key: Word; Shift: TShiftState);
 begin
   fmIndex.FormKeyUp(Sender, Key, Shift);
+end;
+
+procedure TfNovaVersao.Timer1Timer(Sender: TObject);
+var
+  arquivo: string;
+  baixado: Boolean;
+begin
+  timer1.Enabled := false;
+
+
+  arquivo := fmIndex.dir_temp + '\'+fmIndex.param.Strings.Values['setup_name'+fIniciando.LANG];
+  baixado := fmIndex.DownloadArquivo(fmIndex.param.Strings.Values['download'+fIniciando.LANG]+'?lang='+fIniciando.LANG,arquivo);
+
+  (*
+  inst := fmIndex.param.Strings.Values['instalador'+fIniciando.LANG];
+  setup_dir := inst;
+//  DeleteFile(arquivo);
+  arquivo := ExtractFilePath(application.ExeName)+setup_dir;
+  lista := TStringList.Create;
+  lista.Add(setup_dir);
+
+  fIniciando.AppCreateForm(TfAtualiza, fAtualiza);
+  fAtualiza.arquivos := lista;
+  fAtualiza.ShowModal;  *)
+
+
+  if (not FileExists(arquivo)) or (baixado = false) then
+  begin
+    Application.MessageBox('Não foi possível baixar/executar a atualização do menu!'+#13#10+'Favor, acesse o site https://louvorja.com.br/ e efetue a instalação manual da nova versão.',fmIndex.TITULO,mb_ok+mb_iconerror);
+    Exit;
+  end
+  else
+  begin
+    fmIndex.abrirArquivo(arquivo);
+    DM.tmrSair.enabled := true;
+    Application.Terminate;
+  end;
 end;
 
 end.

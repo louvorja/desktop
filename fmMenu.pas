@@ -7270,7 +7270,13 @@ begin
       Jpg := TJPEGImage.Create;
       bmp := TBitmap.Create;
       if FileExists(dir + DM.qrONL_CANAIS.FieldByName('CANAL_ID').AsString + '.jpg') then
-        Jpg.LoadFromFile(dir + DM.qrONL_CANAIS.FieldByName('CANAL_ID').AsString + '.jpg');
+        Jpg.LoadFromFile(dir + DM.qrONL_CANAIS.FieldByName('CANAL_ID').AsString + '.jpg')
+      (*else
+      begin
+        DownloadArquivo(DM.qrONL_CANAIS.FieldByName('IMAGEM').AsString, dir + '\' + DM.qrONL_CANAIS.FieldByName('CANAL_ID').AsString + '.jpg');
+        if FileExists(dir + DM.qrONL_CANAIS.FieldByName('CANAL_ID').AsString + '.jpg') then
+          Jpg.LoadFromFile(dir + DM.qrONL_CANAIS.FieldByName('CANAL_ID').AsString + '.jpg');
+      end*);
       bmp.Assign(Jpg);
       bmp.Height := 88;
       bmp.Width := 88;

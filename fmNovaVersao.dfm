@@ -2,10 +2,10 @@ object fNovaVersao: TfNovaVersao
   Left = 379
   Top = 277
   BorderIcons = []
-  BorderStyle = bsDialog
+  BorderStyle = bsNone
   Caption = 'Atualizar Colet'#226'nea...'
-  ClientHeight = 167
-  ClientWidth = 582
+  ClientHeight = 196
+  ClientWidth = 588
   Color = clBtnFace
   Font.Charset = DEFAULT_CHARSET
   Font.Color = clWindowText
@@ -16,14 +16,15 @@ object fNovaVersao: TfNovaVersao
   OldCreateOrder = False
   Position = poScreenCenter
   Scaled = False
+  OnActivate = FormActivate
   OnCreate = FormCreate
   OnKeyUp = FormKeyUp
   PixelsPerInch = 96
   TextHeight = 13
   object bsSkinPanel1: TbsSkinPanel
     Left = 0
-    Top = 125
-    Width = 582
+    Top = 154
+    Width = 588
     Height = 42
     HintImageIndex = 0
     TabOrder = 2
@@ -56,9 +57,11 @@ object fNovaVersao: TfNovaVersao
     Spacing = 2
     Caption = 'bsSkinPanel1'
     Align = alBottom
+    ExplicitTop = 125
+    ExplicitWidth = 582
     object bsSkinButton2: TbsSkinButton
       AlignWithMargins = True
-      Left = 467
+      Left = 473
       Top = 5
       Width = 110
       Height = 32
@@ -97,10 +100,11 @@ object fNovaVersao: TfNovaVersao
       Spacing = 1
       Align = alRight
       OnClick = bsSkinButton2Click
+      ExplicitLeft = 467
     end
     object bsSkinButton3: TbsSkinButton
       AlignWithMargins = True
-      Left = 347
+      Left = 353
       Top = 5
       Width = 110
       Height = 32
@@ -139,14 +143,14 @@ object fNovaVersao: TfNovaVersao
       Spacing = 1
       Align = alRight
       OnClick = bsSkinButton3Click
-      ExplicitLeft = 395
+      ExplicitLeft = 347
     end
   end
   object bsSkinPanel2: TbsSkinPanel
     Left = 0
     Top = 0
     Width = 105
-    Height = 125
+    Height = 154
     HintImageIndex = 0
     TabOrder = 0
     SkinData = DM.bsSkinData1
@@ -178,11 +182,12 @@ object fNovaVersao: TfNovaVersao
     Spacing = 2
     Caption = 'bsSkinPanel1'
     Align = alLeft
+    ExplicitHeight = 125
     object Image1: TbsPngImageView
       Left = 0
       Top = 0
       Width = 105
-      Height = 125
+      Height = 154
       DoubleBuffered = False
       ReflectionEffect = False
       PngImageList = DM.ico_64x64
@@ -196,8 +201,8 @@ object fNovaVersao: TfNovaVersao
   object bsSkinPanel3: TbsSkinPanel
     Left = 105
     Top = 0
-    Width = 477
-    Height = 125
+    Width = 483
+    Height = 154
     HintImageIndex = 0
     TabOrder = 1
     SkinData = DM.bsSkinData1
@@ -229,11 +234,13 @@ object fNovaVersao: TfNovaVersao
     Spacing = 2
     Caption = 'bsSkinPanel1'
     Align = alClient
+    ExplicitWidth = 477
+    ExplicitHeight = 125
     object lbl1: TbsSkinStdLabel
       AlignWithMargins = True
       Left = 5
       Top = 15
-      Width = 467
+      Width = 473
       Height = 13
       Margins.Left = 5
       Margins.Top = 15
@@ -258,7 +265,7 @@ object fNovaVersao: TfNovaVersao
       AlignWithMargins = True
       Left = 5
       Top = 103
-      Width = 467
+      Width = 473
       Height = 13
       Margins.Left = 5
       Margins.Top = 10
@@ -284,7 +291,7 @@ object fNovaVersao: TfNovaVersao
       AlignWithMargins = True
       Left = 5
       Top = 43
-      Width = 467
+      Width = 473
       Height = 45
       Margins.Left = 5
       Margins.Top = 10
@@ -330,6 +337,7 @@ object fNovaVersao: TfNovaVersao
         end>
       ShowCaption = False
       TabOrder = 0
+      ExplicitWidth = 467
       object lbl2: TbsSkinStdLabel
         Left = 0
         Top = 0
@@ -360,7 +368,7 @@ object fNovaVersao: TfNovaVersao
       object lblVAtu: TbsSkinStdLabel
         Left = 110
         Top = 0
-        Width = 357
+        Width = 363
         Height = 22
         EllipsType = bsetNone
         UseSkinFont = True
@@ -417,7 +425,7 @@ object fNovaVersao: TfNovaVersao
       object lblVNova: TbsSkinStdLabel
         Left = 110
         Top = 22
-        Width = 357
+        Width = 363
         Height = 23
         EllipsType = bsetNone
         UseSkinFont = True
@@ -445,6 +453,18 @@ object fNovaVersao: TfNovaVersao
         ExplicitHeight = 21
       end
     end
+  end
+  object progress: TProgressBar
+    AlignWithMargins = True
+    Left = 105
+    Top = 97
+    Width = 469
+    Height = 21
+    Margins.Top = 7
+    Margins.Bottom = 7
+    Style = pbstMarquee
+    TabOrder = 3
+    Visible = False
   end
   object OpenDialog1: TbsSkinOpenDialog
     ShowThumbnails = True
@@ -547,7 +567,13 @@ object fNovaVersao: TfNovaVersao
     Magnetic = False
     MagneticSize = 5
     BorderIcons = []
-    Left = 327
-    Top = 44
+    Left = 375
+    Top = 36
+  end
+  object Timer1: TTimer
+    Enabled = False
+    OnTimer = Timer1Timer
+    Left = 246
+    Top = 67
   end
 end
