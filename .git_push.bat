@@ -4,4 +4,4 @@ set /p  texto=
 
 git add .
 git commit -m "%texto%"
-git push origin master
+git push origin main
