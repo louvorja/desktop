@@ -282,23 +282,21 @@ begin
   pbProgresso.Style := pbstMarquee;
 
 
-//  if (fmIndex.param.Strings.Values['ftp'] = '') then
-//  begin
-    DM.IdHTTP1.Request.CustomHeaders.Values['Api-Token'] := '02@v2nFB2Dc';
-    try
-      LinkPag := DM.IdHTTP1.Get(fmIndex.url_params);
-    except
-      Sleep(2000);
-      LinkPag := DM.IdHTTP1.Get(fmIndex.url_params);
-    end;
-    //txt := fmIndex.ExtraiTexto(LinkPag, '<params>', '</params>');
-    txt := LinkPag;
-    txt := IfThen(trim(txt) = '', '=', txt);
-    fmIndex.Param.Strings.Text := txt;
-    fmIndex.Param.Strings.SaveToFile(fmIndex.dir_dados + 'configweb.ja');
-//  end;
+  DM.IdHTTP1.Request.CustomHeaders.Values['Api-Token'] := '02@v2nFB2Dc';
+  try
+    LinkPag := DM.IdHTTP1.Get(fmIndex.url_params);
+  except
+    Sleep(2000);
+    LinkPag := DM.IdHTTP1.Get(fmIndex.url_params);
+  end;
+  //txt := fmIndex.ExtraiTexto(LinkPag, '<params>', '</params>');
+  txt := LinkPag;
+  txt := IfThen(trim(txt) = '', '=', txt);
+  fmIndex.Param.Strings.Text := txt;
+  fmIndex.Param.Strings.SaveToFile(fmIndex.dir_dados + 'configweb.ja');
 
-  if (fmIndex.param.Strings.Values['ftp'] = '') then
+
+  if (fmIndex.param.Strings.Values['conn_ftp'] = '') then
   begin
     Application.MessageBox(PChar('Não foi possível buscar informações de conexão!'),fmIndex.TITULO,mb_ok+MB_ICONERROR);
     tmrFecha.Enabled := True;
@@ -318,18 +316,22 @@ begin
       ip := TIdIPWatch.Create(nil);
   //    lParams := TStringList.Create;
       lParams := '';
-      lParams := lParams+'acesso=lja_col_ftp';
       lParams := lParams+'&lang='+fIniciando.LANG;
-      lParams := lParams+'&versao=' + fmIndex.lblVersao.Caption;
-      lParams := lParams+'&versao_exe=' + fmIndex.VersaoExe;
-      lParams := lParams+'&datahora=' + formatdatetime('yyyy-mm-dd hh:nn:ss', Now());
+      lParams := lParams+'&version=' + fmIndex.lblVersao.Caption;
+      lParams := lParams+'&bin_version=' + fmIndex.VersaoExe;
+      lParams := lParams+'&datetime=' + formatdatetime('yyyy-mm-dd hh:nn:ss', Now());
       lParams := lParams+'&ip=' + ip.LocalIP;
-      lParams := lParams+'&dir=' + Application.ExeName;
+      lParams := lParams+'&directory=' + Application.ExeName;
   //    lParams := lParams+'&parametros=' + GetCommandLine;
       fmIndex.paramtemp.Lines.Clear;
       fmIndex.paramtemp.Text := fmIndex.GetComputerNameFunc;
-      lParams := lParams+'&nome=' + trim(fmIndex.paramtemp.Lines[0]);
-      url := fmIndex.param.Strings.Values['ftp']+'?p='+DM.IdEncoderMIME.EncodeString(lParams);
+      lParams := lParams+'&pc_name=' + trim(fmIndex.paramtemp.Lines[0]);
+
+      if Pos('?', fmIndex.param.Strings.Values['conn_ftp']) > 0 then
+        url := fmIndex.param.Strings.Values['conn_ftp']+'&data='+DM.IdEncoderMIME.EncodeString(lParams)
+      else
+        url := fmIndex.param.Strings.Values['conn_ftp']+'?data='+DM.IdEncoderMIME.EncodeString(lParams);
+
       while (tmrFecha.Enabled = False) and (dados_ftp = False)  do
       begin
         dados_ftp := True;
@@ -430,11 +432,11 @@ begin
 
   arquivo_temp := '';
 
-  ftp_url := ftp.Values['ftp_url'];
-  ftp_dir := ftp.Values['ftp_dir'];
-  ftp_porta := StrToInt('0'+ftp.Values['ftp_porta']);
-  ftp_usuario := ftp.Values['ftp_usuario'];
-  ftp_senha := ftp.Values['ftp_senha'];
+  ftp_url := ftp.Values['host'];
+  ftp_dir := ftp.Values['root'];
+  ftp_porta := StrToInt('0'+ftp.Values['port']);
+  ftp_usuario := ftp.Values['username'];
+  ftp_senha := ftp.Values['password'];
 
   sTitulo.Caption := 'Conectando ao servidor...';
   ftp_conecta();

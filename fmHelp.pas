@@ -88,6 +88,7 @@ var
   Flags: Cardinal;
 begin
 
+  DM.IdHTTP1.Request.CustomHeaders.Values['Api-Token'] := '02@v2nFB2Dc';
   if (fmIndex.param.Strings.Values['help'] = '') then
   begin
     try
@@ -96,7 +97,7 @@ begin
       Sleep(2000);
       LinkPag := DM.IdHTTP1.Get(fmIndex.url_params);
     end;
-    txt := fmIndex.ExtraiTexto(LinkPag, '<params>', '</params>');
+//    txt := fmIndex.ExtraiTexto(LinkPag, '<params>', '</params>');
     txt := IfThen(trim(txt) = '', '=', txt);
     fmIndex.Param.Strings.Text := txt;
     fmIndex.Param.Strings.SaveToFile(fmIndex.dir_dados + 'configweb.ja');
@@ -111,9 +112,9 @@ begin
   else
   begin
     WBLoadHTML(wbNew,'<b>Carregando...</b>');
-    if (fmIndex.param.Strings.Values['logs_versao'] <> '') then
+    if (fmIndex.param.Strings.Values['version_log'] <> '') then
     begin
-      url := fmIndex.param.Strings.Values['logs_versao']+'?lang='+fIniciando.LANG+'&versao='+fmIndex.lblVersao.Caption;
+      url := fmIndex.param.Strings.Values['version_log']+'?lang='+fIniciando.LANG+'&version='+fmIndex.lblVersao.Caption;
       wbNew.Navigate(url);
     end;
   end;

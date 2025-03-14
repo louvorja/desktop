@@ -32360,7 +32360,7 @@ object fmIndex: TfmIndex
                   PageSize = 1
                   Min = 1
                   Max = 0
-                  Position = 0
+                  Position = 1
                   SmallChange = 1
                   LargeChange = 1
                 end
@@ -32688,7 +32688,7 @@ object fmIndex: TfmIndex
                   PageSize = 1
                   Min = 1
                   Max = 0
-                  Position = 1
+                  Position = 0
                   SmallChange = 1
                   LargeChange = 1
                 end
@@ -50072,7 +50072,7 @@ object fmIndex: TfmIndex
         PageSize = 1
         Min = 1
         Max = 0
-        Position = 0
+        Position = 1
         SmallChange = 1
         LargeChange = 1
       end
@@ -53483,7 +53483,7 @@ object fmIndex: TfmIndex
             Width = 225
             Height = 374
             Align = alClient
-            Date = 43344.488362986110000000
+            Date = 43344.541482962970000000
             DoubleBuffered = False
             ParentDoubleBuffered = False
             TabOrder = 0

@@ -101,12 +101,12 @@
         <DCC_ExeOutput>D:\OneDrive\Documentos\Delphi\Sistemas\LouvorJA\Software\</DCC_ExeOutput>
         <VerInfo_IncludeVerInfo>true</VerInfo_IncludeVerInfo>
         <VerInfo_AutoGenVersion>true</VerInfo_AutoGenVersion>
-        <VerInfo_Keys>CompanyName=;FileVersion=24.7.0.0;InternalName=;LegalCopyright=;LegalTrademarks=;OriginalFilename=;ProductVersion=1.0.0.0;Comments=;ProgramID=com.embarcadero.$(MSBuildProjectName);FileDescription=$(MSBuildProjectName);ProductName=$(MSBuildProjectName)</VerInfo_Keys>
+        <VerInfo_Keys>CompanyName=;FileVersion=24.9.0.0;InternalName=;LegalCopyright=;LegalTrademarks=;OriginalFilename=;ProductVersion=1.0.0.0;Comments=;ProgramID=com.embarcadero.$(MSBuildProjectName);FileDescription=$(MSBuildProjectName);ProductName=$(MSBuildProjectName)</VerInfo_Keys>
         <DCC_RemoteDebug>false</DCC_RemoteDebug>
         <BT_BuildType>Debug</BT_BuildType>
         <AppEnableRuntimeThemes>true</AppEnableRuntimeThemes>
         <Debugger_CWD>D:\OneDrive\Documentos\Delphi\Sistemas\LouvorJA\Software</Debugger_CWD>
-        <VerInfo_MinorVer>7</VerInfo_MinorVer>
+        <VerInfo_MinorVer>9</VerInfo_MinorVer>
         <UWP_DelphiLogo44>Arquivos Projeto\ico\Ícones Programa\Novo Logo.png</UWP_DelphiLogo44>
         <UWP_DelphiLogo150>Arquivos Projeto\ico\Ícones Programa\Novo Logo.png</UWP_DelphiLogo150>
     </PropertyGroup>
