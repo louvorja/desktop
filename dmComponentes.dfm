@@ -1,59 +1,59 @@
 object DM: TDM
   OldCreateOrder = False
-  Height = 468
-  Width = 788
+  Height = 591
+  Width = 830
   object tmrSortearNM: TTimer
     Enabled = False
     Interval = 1
     OnTimer = tmrSortearNMTimer
-    Left = 176
-    Top = 310
+    Left = 712
+    Top = 424
   end
   object tmrSair: TTimer
     Enabled = False
     Interval = 1
     OnTimer = tmrSairTimer
-    Left = 216
-    Top = 310
+    Left = 568
+    Top = 424
   end
   object tmrRelogio: TTimer
     Enabled = False
     OnTimer = tmrRelogioTimer
-    Left = 256
-    Top = 310
+    Left = 520
+    Top = 424
   end
   object tmrVersao: TTimer
     Enabled = False
     OnTimer = tmrVersaoTimer
-    Left = 336
-    Top = 310
+    Left = 472
+    Top = 424
   end
   object tmrSortear: TTimer
     Enabled = False
     Interval = 1
     OnTimer = tmrSortearTimer
-    Left = 136
-    Top = 310
+    Left = 424
+    Top = 424
   end
   object tmrSorteio: TTimer
     Enabled = False
     Interval = 1
     OnTimer = tmrSorteioTimer
-    Left = 96
-    Top = 310
+    Left = 376
+    Top = 424
   end
   object tmrCrono: TTimer
     Enabled = False
     Interval = 1
     OnTimer = tmrCronoTimer
-    Left = 56
-    Top = 310
+    Left = 88
+    Top = 472
   end
   object tmrMediaPlayer: TTimer
     Enabled = False
     OnTimer = tmrMediaPlayerTimer
-    Left = 16
-    Top = 310
+    Left = 40
+    Top = 472
   end
   object qrALBUNS: TFDQuery
     Connection = ADO
@@ -61,8 +61,8 @@ object DM: TDM
       'SELECT * FROM LISTA_COLETANEAS'
       'WHERE '
       'TIPO = :TIPO')
-    Left = 696
-    Top = 142
+    Left = 184
+    Top = 280
     ParamData = <
       item
         Name = 'TIPO'
@@ -74,8 +74,8 @@ object DM: TDM
     SQL.Strings = (
       'SELECT NOME,ALBUM,URL,URL_INSTRUMENTAL FROM MUSICAS'
       'WHERE ID = :ID')
-    Left = 16
-    Top = 184
+    Left = 232
+    Top = 280
     ParamData = <
       item
         Name = 'ID'
@@ -91,8 +91,8 @@ object DM: TDM
       'WHERE MUSICA.ID = :ID    '
       '      AND MUSICA.ALBUM = ALBUM.ID'
       'ORDER BY MUSICA.FAIXA,MUSICA.NOME')
-    Left = 616
-    Top = 142
+    Left = 40
+    Top = 280
     ParamData = <
       item
         Name = 'ID'
@@ -104,13 +104,13 @@ object DM: TDM
     SQL.Strings = (
       'SELECT * FROM ONL_CANAIS'
       'ORDER BY NOME')
-    Left = 216
-    Top = 184
+    Left = 328
+    Top = 232
   end
   object ADOQuery: TFDQuery
     Connection = ADO
-    Left = 256
-    Top = 184
+    Left = 184
+    Top = 232
   end
   object qrLETRA_MUSICA: TFDQuery
     Connection = ADO
@@ -118,8 +118,8 @@ object DM: TDM
       'SELECT * FROM MUSICAS_LETRA'
       'WHERE MUSICA = :MUSICA_ID'
       'ORDER BY ORDEM')
-    Left = 296
-    Top = 184
+    Left = 232
+    Top = 232
     ParamData = <
       item
         Name = 'MUSICA_ID'
@@ -131,16 +131,16 @@ object DM: TDM
     SQL.Strings = (
       'SELECT * FROM ONL_PLAYLISTS'
       'ORDER BY NOME')
-    Left = 136
-    Top = 184
+    Left = 88
+    Top = 232
   end
   object qrONL_VIDEOS_TUDO: TFDQuery
     Connection = ADO
     SQL.Strings = (
       'SELECT * FROM ONL_VIDEOS'
       'ORDER BY POSICAO,NOME')
-    Left = 496
-    Top = 142
+    Left = 136
+    Top = 232
   end
   object qrHINOS_LITURGIA: TFDQuery
     Filtered = True
@@ -154,8 +154,8 @@ object DM: TDM
       '    ALBUM'
       'FROM HINARIO_ADVENTISTA'
       'WHERE FAIXA = :FAIXA')
-    Left = 216
-    Top = 142
+    Left = 280
+    Top = 280
     ParamData = <
       item
         Name = 'FAIXA'
@@ -166,8 +166,8 @@ object DM: TDM
     Connection = ADO
     SQL.Strings = (
       'SELECT * FROM ALBUM WHERE ID = :ID')
-    Left = 376
-    Top = 142
+    Left = 424
+    Top = 328
     ParamData = <
       item
         Name = 'ID'
@@ -178,15 +178,15 @@ object DM: TDM
     Connection = ADO
     SQL.Strings = (
       'SELECT VERSAO_BD FROM VERSAO ORDER BY ID DESC LIMIT 1')
-    Left = 296
-    Top = 142
+    Left = 520
+    Top = 328
   end
   object qrMUSICAS_INFANTIS: TFDQuery
     Connection = ADO
     SQL.Strings = (
       'SELECT DISTINCT * FROM MUSICAS_INFANTIS')
-    Left = 336
-    Top = 142
+    Left = 376
+    Top = 328
   end
   object qrSLIDE_MUSICA_ALBUM: TFDQuery
     Connection = ADO
@@ -203,8 +203,8 @@ object DM: TDM
       'WHERE'
       '  ID_ALBUM = :ID_ALBUM'
       'ORDER BY A.FAIXA,M.NOME')
-    Left = 216
-    Top = 226
+    Left = 232
+    Top = 328
     ParamData = <
       item
         Name = 'ID_ALBUM'
@@ -217,8 +217,8 @@ object DM: TDM
       'SELECT * FROM ONL_PLAYLISTS'
       'WHERE CANAL_ID=:CANAL_ID'
       'ORDER BY NOME')
-    Left = 496
-    Top = 226
+    Left = 616
+    Top = 328
     ParamData = <
       item
         Name = 'CANAL_ID'
@@ -229,8 +229,8 @@ object DM: TDM
     Connection = ADO
     SQL.Strings = (
       'SELECT * FROM LIVRO ORDER BY ID')
-    Left = 128
-    Top = 386
+    Left = 712
+    Top = 328
   end
   object qrHINOS: TFDQuery
     Filtered = True
@@ -243,8 +243,8 @@ object DM: TDM
       
         '    (CAST(:VALOR AS INTEGER) <= 0 AND NOME_SEMAC LIKE '#39'%'#39' || :VA' +
         'LOR || '#39'%'#39')')
-    Left = 496
-    Top = 184
+    Left = 472
+    Top = 280
     ParamData = <
       item
         Name = 'VALOR'
@@ -260,15 +260,15 @@ object DM: TDM
       '    VERSAO || '#39' ('#39' || SIGLA || '#39')'#39' AS VERSAO_DESC'
       'FROM VERSAO_BIBLICA'
       'ORDER BY VERSAO;')
-    Left = 536
-    Top = 184
+    Left = 520
+    Top = 280
   end
   object qrDOXOLOGIA_CATE: TFDQuery
     Connection = ADO
     SQL.Strings = (
       'SELECT * FROM DOXOLOGIA_ALBUNS')
-    Left = 576
-    Top = 184
+    Left = 568
+    Top = 280
   end
   object qrLETRA: TFDQuery
     Filtered = True
@@ -278,7 +278,7 @@ object DM: TDM
       'WHERE MUSICA = :MUSICA'
       'ORDER BY ORDEM')
     Left = 376
-    Top = 184
+    Top = 280
     ParamData = <
       item
         Name = 'MUSICA'
@@ -290,8 +290,8 @@ object DM: TDM
     SQL.Strings = (
       'SELECT ID,CAPITULOS FROM LIVRO'
       'WHERE LIVRO = :LIVRO')
-    Left = 416
-    Top = 184
+    Left = 424
+    Top = 280
     ParamData = <
       item
         Name = 'LIVRO'
@@ -305,8 +305,8 @@ object DM: TDM
       'SET'
       '  TEMPO = :TEMPO'
       'WHERE ID = :MUSICA_ID')
-    Left = 456
-    Top = 184
+    Left = 616
+    Top = 280
     ParamData = <
       item
         Name = 'TEMPO'
@@ -323,8 +323,8 @@ object DM: TDM
       'SELECT * FROM ONL_VIDEOS'
       'WHERE PLAYLIST_ID=:PLAYLIST_ID'
       'ORDER BY POSICAO,NOME')
-    Left = 16
-    Top = 226
+    Left = 88
+    Top = 328
     ParamData = <
       item
         Name = 'PLAYLIST_ID'
@@ -337,8 +337,8 @@ object DM: TDM
       'SELECT MAX(VERSICULO) AS MAX_VERSICULO'
       'FROM BIBLIA'
       'WHERE BIBLIA.LIVRO=:LIVRO AND BIBLIA.CAPITULO=:CAPITULO')
-    Left = 56
-    Top = 226
+    Left = 136
+    Top = 328
     ParamData = <
       item
         Name = 'LIVRO'
@@ -377,8 +377,8 @@ object DM: TDM
       '    AND NOME LIKE :INICIAL || '#39'%'#39
       ''
       'ORDER BY NOME')
-    Left = 240
-    Top = 378
+    Left = 184
+    Top = 328
     ParamData = <
       item
         Name = 'TIPO'
@@ -433,8 +433,8 @@ object DM: TDM
       'WHERE'
       '  ID_ALBUM = :ID_ALBUM'
       'ORDER BY A.FAIXA, M.NOME;')
-    Left = 616
-    Top = 184
+    Left = 664
+    Top = 280
     ParamData = <
       item
         Name = 'ID_ALBUM'
@@ -449,8 +449,8 @@ object DM: TDM
         'IMAGEM FROM MUSICAS_SLIDE'
       'WHERE MUSICA_ID = :MUSICA_ID'
       'ORDER BY ORDEM')
-    Left = 656
-    Top = 184
+    Left = 712
+    Top = 280
     ParamData = <
       item
         Name = 'MUSICA_ID'
@@ -463,8 +463,8 @@ object DM: TDM
       'SELECT MUSICAS_SLIDE.* FROM MUSICAS_SLIDE'
       'WHERE MUSICA_ID = :MUSICA_ID'
       'ORDER BY ORDEM')
-    Left = 696
-    Top = 184
+    Left = 40
+    Top = 328
     ParamData = <
       item
         Name = 'MUSICA_ID'
@@ -478,10 +478,9 @@ object DM: TDM
         'Database=D:\OneDrive\Documentos\Delphi\Sistemas\LouvorJA\Softwar' +
         'e\config\database.db'
       'DriverID=SQLite')
-    Connected = True
     LoginPrompt = False
-    Left = 632
-    Top = 380
+    Left = 376
+    Top = 184
   end
   object cdsVideosOnPerso: TClientDataSet
     Aggregates = <>
@@ -517,8 +516,8 @@ object DM: TDM
     StoreDefs = True
     AfterPost = ClientDataSetSaveToFile
     AfterDelete = ClientDataSetSaveToFile
-    Left = 496
-    Top = 16
+    Left = 88
+    Top = 88
     object StringField3: TStringField
       FieldName = 'ID'
     end
@@ -548,8 +547,8 @@ object DM: TDM
     StoreDefs = True
     AfterPost = ClientDataSetSaveToFile
     AfterDelete = ClientDataSetSaveToFile
-    Left = 616
-    Top = 16
+    Left = 136
+    Top = 88
     object StringField6: TStringField
       FieldName = 'ID'
     end
@@ -656,8 +655,8 @@ object DM: TDM
     IndexFieldNames = 'ORDEM'
     Params = <>
     StoreDefs = True
-    Left = 536
-    Top = 16
+    Left = 184
+    Top = 88
   end
   object cdsItensAgendadosClone: TClientDataSet
     Aggregates = <>
@@ -693,8 +692,8 @@ object DM: TDM
     IndexDefs = <>
     Params = <>
     StoreDefs = True
-    Left = 576
-    Top = 16
+    Left = 40
+    Top = 88
   end
   object cdsSLIDE_MUSICA: TClientDataSet
     Aggregates = <>
@@ -783,8 +782,8 @@ object DM: TDM
     IndexDefs = <>
     Params = <>
     StoreDefs = True
-    Left = 216
-    Top = 58
+    Left = 712
+    Top = 40
   end
   object cdsItensAgendados: TClientDataSet
     Aggregates = <>
@@ -822,8 +821,8 @@ object DM: TDM
     StoreDefs = True
     AfterPost = ClientDataSetSaveToFile
     AfterDelete = ClientDataSetSaveToFile
-    Left = 176
-    Top = 58
+    Left = 664
+    Top = 40
   end
   object cdsCategoriasItensAgendados: TClientDataSet
     Aggregates = <>
@@ -843,8 +842,8 @@ object DM: TDM
     StoreDefs = True
     AfterPost = ClientDataSetSaveToFile
     AfterDelete = ClientDataSetSaveToFile
-    Left = 56
-    Top = 58
+    Left = 424
+    Top = 88
   end
   object cdsCOLETANEAS_PERSO: TClientDataSet
     Aggregates = <>
@@ -860,8 +859,8 @@ object DM: TDM
     StoreDefs = True
     AfterPost = ClientDataSetSaveToFile
     AfterDelete = ClientDataSetSaveToFile
-    Left = 136
-    Top = 58
+    Left = 328
+    Top = 88
     object cdsCOLETANEAS_PERSOID: TStringField
       FieldName = 'ID'
     end
@@ -888,98 +887,98 @@ object DM: TDM
   end
   object dsLETRA_MUSICA: TDataSource
     DataSet = qrLETRA_MUSICA
-    Left = 536
-    Top = 100
+    Left = 232
+    Top = 184
   end
   object dsFavoritos: TDataSource
     DataSet = cdsFavoritos
-    Left = 576
-    Top = 100
+    Left = 280
+    Top = 184
   end
   object dsMUSICAS: TDataSource
     DataSet = qrMUSICAS
-    Left = 616
-    Top = 100
+    Left = 328
+    Top = 184
   end
   object dsSLIDE_MUSICA: TDataSource
     DataSet = cdsSLIDE_MUSICA
-    Left = 456
-    Top = 100
+    Left = 136
+    Top = 184
   end
   object dsBIBLIA_LIVROS: TDataSource
     DataSet = qrBIBLIA_LIVROS
-    Left = 536
-    Top = 58
+    Left = 88
+    Top = 136
   end
   object dsVideosOnPerso: TDataSource
     DataSet = cdsVideosOnPerso
-    Left = 496
-    Top = 58
+    Left = 40
+    Top = 136
   end
   object dsMUSICAS_INFANTIS: TDataSource
     DataSet = qrMUSICAS_INFANTIS
-    Left = 456
-    Top = 58
+    Left = 712
+    Top = 88
   end
   object dsItensAgendados: TDataSource
     DataSet = cdsItensAgendados
-    Left = 416
-    Top = 58
+    Left = 664
+    Top = 88
   end
   object dsItensAgendadosClone: TDataSource
     DataSet = cdsItensAgendadosClone
-    Left = 296
-    Top = 58
+    Left = 520
+    Top = 88
   end
   object dsBIBLIA_VERSAO: TDataSource
     DataSet = qrBIBLIA_VERSAO
-    Left = 336
-    Top = 58
+    Left = 568
+    Top = 88
   end
   object dsCOLETANEAS_PERSO: TDataSource
     DataSet = cdsCOLETANEAS_PERSO
-    Left = 376
-    Top = 58
+    Left = 616
+    Top = 88
   end
   object dsSLIDE_MUSICA2: TDataSource
     DataSet = cdsSLIDE_MUSICA2
-    Left = 256
-    Top = 100
+    Left = 616
+    Top = 136
   end
   object dsHINOS: TDataSource
     DataSet = qrHINOS
-    Left = 216
-    Top = 100
+    Left = 568
+    Top = 136
   end
   object dsHINOS_LITURGIA: TDataSource
     DataSet = qrHINOS_LITURGIA
-    Left = 176
-    Top = 100
+    Left = 520
+    Top = 136
   end
   object dsBUSCA: TDataSource
     DataSet = qrBUSCA
-    Left = 296
-    Top = 100
+    Left = 664
+    Top = 136
   end
   object dsCategoriasItensAgendados: TDataSource
     DataSet = cdsCategoriasItensAgendados
-    Left = 416
-    Top = 100
+    Left = 88
+    Top = 184
   end
   object dsBD: TDataSource
     DataSet = qrBD
-    Left = 376
-    Top = 100
+    Left = 40
+    Top = 184
   end
   object IdDecoderMIME: TIdDecoderMIME
     FillChar = '='
-    Left = 616
-    Top = 226
+    Left = 136
+    Top = 376
   end
   object IdEncoderMIME: TIdEncoderMIME
     FillChar = '='
-    Left = 656
-    Top = 226
+    Left = 184
+    Top = 376
   end
   object IdHTTP1: TIdHTTP
     IOHandler = IdSSLIOHandlerSocketOpenSSL1
@@ -1001,8 +1000,8 @@ object DM: TDM
     Request.Ranges.Units = 'bytes'
     Request.Ranges = <>
     HTTPOptions = [hoForceEncodeParams]
-    Left = 696
-    Top = 226
+    Left = 232
+    Top = 376
   end
   object DirectoryDialog: TbsSkinSelectDirectoryDialog
     TreeShowLines = True
@@ -1025,8 +1024,8 @@ object DM: TDM
     DefaultFont.Style = []
     Title = 'Selecione o Diret'#243'rio...'
     ShowToolBar = True
-    Left = 456
-    Top = 16
+    Left = 568
+    Top = 40
   end
   object SaveDialog_: TbsSkinSaveDialog
     ShowThumbnails = True
@@ -1055,8 +1054,8 @@ object DM: TDM
     Title = 'Save file'
     Filter = 'All files|*.*'
     FilterIndex = 1
-    Left = 416
-    Top = 16
+    Left = 520
+    Top = 40
   end
   object progressDialog: TbsSkinProgressDialog
     ProgressAnimation = True
@@ -1094,8 +1093,8 @@ object DM: TDM
     DefaultGaugeFont.Style = []
     UseSkinFont = True
     OnCancel = progressDialogCancel
-    Left = 376
-    Top = 16
+    Left = 472
+    Top = 40
   end
   object bsSkinData1: TbsSkinData
     DlgTreeViewDrawSkin = True
@@ -1113,8 +1112,8 @@ object DM: TDM
     SkinIndex = 0
     ChangeSystemColors = False
     SystemColorHooks = [bsschHighLight]
-    Left = 256
-    Top = 16
+    Left = 328
+    Top = 40
   end
   object bsCompressedSkinList1: TbsCompressedSkinList
     Skins = <
@@ -7517,17 +7516,17 @@ object DM: TDM
           20CCBB65D04D92B4F450D0F25661F25CCFFAEC27742427762EEB8EB6B3E57D6E
           ABF0FF071DDE0D06}
       end>
-    Left = 16
-    Top = 16
+    Left = 40
+    Top = 40
   end
   object imCapas: TImageList
     ColorDepth = cd32Bit
     Height = 137
     Width = 137
-    Left = 256
-    Top = 268
+    Left = 520
+    Top = 376
     Bitmap = {
-      494C010101000800AC0389008900FFFFFFFF2110FFFFFFFFFFFFFFFF424D3600
+      494C010101000800B00389008900FFFFFFFF2110FFFFFFFFFFFFFFFF424D3600
       0000000000003600000028000000240200008900000001002000000000001095
       0400000000000000000000000000000000000000000000000000000000000000
       0000000000000000000000000000000000000000000000000000000000000000
@@ -17230,10 +17229,10 @@ object DM: TDM
     ColorDepth = cd32Bit
     Height = 31
     Width = 46
-    Left = 296
-    Top = 268
+    Left = 568
+    Top = 376
     Bitmap = {
-      494C01012300280084002E001F00FFFFFFFF2110FFFFFFFFFFFFFFFF424D3600
+      494C01012300280088002E001F00FFFFFFFF2110FFFFFFFFFFFFFFFF424D3600
       0000000000003600000028000000B80000001701000001002000000000002022
       030000000000000000000000000000000000200EE8FF200EE8FF200EE8FF200E
       E8FF200EE8FF200EE8FF200EE8FF200EE8FF200EE8FF200EE8FF200EE8FF200E
@@ -23869,16 +23868,16 @@ object DM: TDM
   object ico_albuns: TImageList
     Height = 88
     Width = 88
-    Left = 336
-    Top = 268
+    Left = 616
+    Top = 376
   end
   object ico_janela_dis: TImageList
     Height = 31
     Width = 46
-    Left = 376
-    Top = 268
+    Left = 472
+    Top = 376
     Bitmap = {
-      494C01012300280730042E001F00FFFFFFFFFF10FFFFFFFFFFFFFFFF424D3600
+      494C01012300280734042E001F00FFFFFFFFFF10FFFFFFFFFFFFFFFF424D3600
       0000000000003600000028000000B80000001701000001002000000000002022
       0300000000000000000000000000000000001F1F1F001F1F1F001F1F1F001F1F
       1F001F1F1F001F1F1F001F1F1F001F1F1F001F1F1F001F1F1F001F1F1F001F1F
@@ -30514,16 +30513,16 @@ object DM: TDM
   object ico_on_canais: TImageList
     Height = 88
     Width = 88
-    Left = 416
-    Top = 268
+    Left = 328
+    Top = 376
   end
   object ico_janela: TImageList
     Height = 31
     Width = 46
-    Left = 56
-    Top = 268
+    Left = 376
+    Top = 376
     Bitmap = {
-      494C01012300280730042E001F00FFFFFFFFFF10FFFFFFFFFFFFFFFF424D3600
+      494C01012300280734042E001F00FFFFFFFFFF10FFFFFFFFFFFFFFFF424D3600
       0000000000003600000028000000B80000001701000001002000000000002022
       0300000000000000000000000000000000001F1F1F001F1F1F001F1F1F001F1F
       1F001F1F1F001F1F1F001F1F1F001F1F1F001F1F1F001F1F1F001F1F1F001F1F
@@ -37160,10 +37159,10 @@ object DM: TDM
     ColorDepth = cd32Bit
     Height = 31
     Width = 46
-    Left = 96
-    Top = 268
+    Left = 424
+    Top = 376
     Bitmap = {
-      494C010123003000C4002E001F00FFFFFFFF2110FFFFFFFFFFFFFFFF424D3600
+      494C010123003000C8002E001F00FFFFFFFF2110FFFFFFFFFFFFFFFF424D3600
       0000000000003600000028000000B80000001701000001002000000000002022
       0300000000000000000000000000000000007268F1FF7268F1FF7268F1FF7268
       F1FF7268F1FF7268F1FF7268F1FF7268F1FF7268F1FF7268F1FF7268F1FF7268
@@ -43799,20 +43798,20 @@ object DM: TDM
   object ico_on_playlists: TImageList
     Height = 90
     Width = 120
-    Left = 136
-    Top = 268
+    Left = 40
+    Top = 424
   end
   object ico_doxologia: TImageList
     Height = 88
     Width = 88
-    Left = 176
-    Top = 268
+    Left = 712
+    Top = 376
   end
   object ico_on_videos: TImageList
     Height = 90
     Width = 120
-    Left = 216
-    Top = 268
+    Left = 664
+    Top = 376
   end
   object ico_16x16: TbsPngImageList
     PngImages = <
@@ -55683,10 +55682,10 @@ object DM: TDM
       end>
     PngWidth = 16
     PngHeight = 16
-    Left = 96
-    Top = 16
+    Left = 88
+    Top = 40
     Bitmap = {
-      494C01016C0000039C0310001000FFFFFFFFFF10FFFFFFFFFFFFFFFF424D3600
+      494C01016C000003A00310001000FFFFFFFFFF10FFFFFFFFFFFFFFFF424D3600
       000000000000360000002800000040000000C0010000010020000000000000C0
       0100000000000000000000000000000000000000000000000000000000000000
       0000000000000000000000000000000000000000000000000000000000000000
@@ -59870,10 +59869,10 @@ object DM: TDM
       end>
     PngWidth = 64
     PngHeight = 64
-    Left = 56
-    Top = 16
+    Left = 136
+    Top = 40
     Bitmap = {
-      494C010105001C00B40340004000FFFFFFFFFF10FFFFFFFFFFFFFFFF424D3600
+      494C010105001C00B80340004000FFFFFFFFFF10FFFFFFFFFFFFFFFF424D3600
       0000000000003600000028000000000100008000000001002000000000000000
       020000000000000000000000000000000000FFFFFF00FFFFFF00FFFFFF00FFFF
       FF00FFFFFF00FFFFFF00FFFFFF00FFFFFF00FFFFFF00FFFFFF00FFFFFF00FFFF
@@ -69446,10 +69445,10 @@ object DM: TDM
       end>
     PngWidth = 24
     PngHeight = 24
-    Left = 216
-    Top = 16
+    Left = 184
+    Top = 40
     Bitmap = {
-      494C01016D00B005900318001800FFFFFFFFFF10FFFFFFFFFFFFFFFF424D3600
+      494C01016D00B005940318001800FFFFFFFFFF10FFFFFFFFFFFFFFFF424D3600
       000000000000360000002800000060000000A0020000010020000000000000F0
       030000000000000000000000000000000000FFFFFF00FFFFFF00FFFFFF00FFFF
       FF00FFFFFF00FFFFFF00FFFFFF00FFFFFF00FFFFFF00FFFFFF00FFFFFF00FFFF
@@ -83199,10 +83198,10 @@ object DM: TDM
       end>
     PngWidth = 40
     PngHeight = 40
-    Left = 176
-    Top = 16
+    Left = 232
+    Top = 40
     Bitmap = {
-      494C010138009004B00328002800FFFFFFFFFF10FFFFFFFFFFFFFFFF424D3600
+      494C010138009004B40328002800FFFFFFFFFF10FFFFFFFFFFFFFFFF424D3600
       0000000000003600000028000000A000000058020000010020000000000000DC
       0500000000000000000000000000000000000000000000000000000000000000
       0000000000000000000000000000000000000000000000000000000000000000
@@ -95585,39 +95584,39 @@ object DM: TDM
       000000000000}
   end
   object OpenDialog: TOpenDialog
-    Left = 456
-    Top = 268
+    Left = 88
+    Top = 424
   end
   object OpenPictureDialog: TOpenPictureDialog
-    Left = 496
-    Top = 268
+    Left = 136
+    Top = 424
   end
   object OpenTextFileDialog: TOpenTextFileDialog
-    Left = 536
-    Top = 268
+    Left = 184
+    Top = 424
   end
   object ColorDialog: TColorDialog
-    Left = 256
-    Top = 58
+    Left = 472
+    Top = 88
   end
   object SaveDialog: TSaveDialog
-    Left = 576
-    Top = 268
+    Left = 232
+    Top = 424
   end
   object SaveTextFileDialog: TSaveTextFileDialog
-    Left = 656
-    Top = 268
+    Left = 328
+    Top = 424
   end
   object SavePictureDialog: TSavePictureDialog
-    Left = 616
-    Top = 268
+    Left = 280
+    Top = 424
   end
   object qrARQUIVOS_HELP_DELETE: TFDQuery
     Connection = ADO
     SQL.Strings = (
       'DELETE FROM ARQUIVOS_HELP;')
-    Left = 696
-    Top = 100
+    Left = 424
+    Top = 184
   end
   object qrARQUIVOS_HELP: TFDQuery
     Connection = ADO
@@ -95625,8 +95624,8 @@ object DM: TDM
       
         'INSERT INTO ARQUIVOS_HELP (ID,ARQUIVO,URL) VALUES (:ID,:ARQUIVO,' +
         ':URL)')
-    Left = 176
-    Top = 142
+    Left = 664
+    Top = 184
     ParamData = <
       item
         Name = 'ID'
@@ -95643,14 +95642,14 @@ object DM: TDM
   end
   object qrBD: TFDQuery
     Connection = ADO
-    Left = 136
-    Top = 142
+    Left = 616
+    Top = 184
   end
   object tmrBusca: TTimer
     Enabled = False
     OnTimer = tmrBuscaTimer
-    Left = 696
-    Top = 268
+    Left = 664
+    Top = 424
   end
   object PasswordDialog: TbsSkinPasswordDialog
     LoginMode = False
@@ -95680,8 +95679,8 @@ object DM: TDM
     DefaultEditFont.Name = 'Tahoma'
     DefaultEditFont.Style = []
     UseSkinFont = True
-    Left = 336
-    Top = 16
+    Left = 376
+    Top = 40
   end
   object qrBIBLIA_CAPITULOS: TFDQuery
     Connection = ADO
@@ -95690,8 +95689,8 @@ object DM: TDM
       'WHERE LIVRO = :LIVRO'
       '      AND VERSAO = :VERSAO'
       'ORDER BY CAPITULO')
-    Left = 176
-    Top = 184
+    Left = 88
+    Top = 280
     ParamData = <
       item
         Name = 'LIVRO'
@@ -95705,20 +95704,20 @@ object DM: TDM
   end
   object dsBIBLIA_CAPITULOS: TDataSource
     DataSet = qrBIBLIA_CAPITULOS
-    Left = 616
-    Top = 58
+    Left = 328
+    Top = 136
   end
   object qrBIBLIA_VERSICULOS: TFDQuery
     Connection = ADO
     SQL.Strings = (
       '/***QUERY VIA PROGRAMA'#199#195'O***/')
-    Left = 96
-    Top = 184
+    Left = 712
+    Top = 232
   end
   object dsBIBLIA_VERSICULOS: TDataSource
     DataSet = qrBIBLIA_VERSICULOS
-    Left = 576
-    Top = 58
+    Left = 376
+    Top = 136
   end
   object cdsBIBLIA_HISTORICO: TClientDataSet
     Aggregates = <>
@@ -95732,8 +95731,8 @@ object DM: TDM
     IndexName = 'ORDER_DATAHORA'
     Params = <>
     StoreDefs = True
-    Left = 96
-    Top = 58
+    Left = 232
+    Top = 88
     object cdsBIBLIA_HISTORICOID: TStringField
       FieldName = 'ID'
     end
@@ -95767,27 +95766,27 @@ object DM: TDM
   end
   object dsBIBLIA_HISTORICO: TDataSource
     DataSet = cdsBIBLIA_HISTORICO
-    Left = 696
-    Top = 58
+    Left = 280
+    Top = 136
   end
   object qrBIBLIA_BUS_LIVROS: TFDQuery
     Connection = ADO
     SQL.Strings = (
       'SELECT ID,ID_SECAO,TESTAMENTO,LIVRO FROM LIVRO ORDER BY ID')
-    Left = 56
-    Top = 184
+    Left = 664
+    Top = 232
   end
   object dsBIBLIA_BUSCA: TDataSource
     DataSet = qrBIBLIA_BUSCA
-    Left = 96
-    Top = 100
+    Left = 136
+    Top = 136
   end
   object qrBIBLIA_BUSCA: TFDQuery
     Connection = ADO
     SQL.Strings = (
       '/***QUERY VIA PROGRAMA'#199#195'O***/')
-    Left = 576
-    Top = 142
+    Left = 424
+    Top = 232
   end
   object qrBIBLIA_VERSAO_2: TFDQuery
     Connection = ADO
@@ -95797,13 +95796,13 @@ object DM: TDM
         'ESC'
       'FROM VERSAO_BIBLICA'
       'ORDER BY VERSAO')
-    Left = 536
-    Top = 142
+    Left = 376
+    Top = 232
   end
   object dsBIBLIA_VERSAO_2: TDataSource
     DataSet = qrBIBLIA_VERSAO_2
-    Left = 56
-    Top = 100
+    Left = 472
+    Top = 136
   end
   object pwd: TbsSkinPasswordDialog
     LoginMode = False
@@ -95833,8 +95832,8 @@ object DM: TDM
     DefaultEditFont.Name = 'Tahoma'
     DefaultEditFont.Style = []
     UseSkinFont = True
-    Left = 296
-    Top = 16
+    Left = 424
+    Top = 40
   end
   object qrALBUM_ATIV: TFDQuery
     Connection = ADO
@@ -95844,27 +95843,27 @@ object DM: TDM
       'PERMITE_DESATIVAR = '#39'S'#39' AND'
       'ID NOT IN (SELECT ID FROM _ALBUM_IGNORAR)'
       'ORDER BY NOME')
-    Left = 656
-    Top = 142
+    Left = 568
+    Top = 232
   end
   object dsALBUM_ATIV: TDataSource
     DataSet = qrALBUM_ATIV
-    Left = 16
-    Top = 100
+    Left = 712
+    Top = 136
   end
   object qrDEL_ALBUM_IGNORAR: TFDQuery
     Connection = ADO
     SQL.Strings = (
       'DELETE FROM _ALBUM_IGNORAR')
-    Left = 96
-    Top = 142
+    Left = 472
+    Top = 184
   end
   object qrADD_ALBUM_IGNORAR: TFDQuery
     Connection = ADO
     SQL.Strings = (
       '/***QUERY VIA PROGRAMA'#199#195'O***/')
-    Left = 16
-    Top = 142
+    Left = 520
+    Top = 184
   end
   object qrALBUM_INATIV: TFDQuery
     Connection = ADO
@@ -95874,35 +95873,35 @@ object DM: TDM
       'PERMITE_DESATIVAR = '#39'S'#39' AND'
       'ID IN (SELECT ID FROM _ALBUM_IGNORAR)'
       'ORDER BY NOME')
-    Left = 56
-    Top = 142
+    Left = 712
+    Top = 184
   end
   object dsALBUM_INATIV: TDataSource
     DataSet = qrALBUM_INATIV
-    Left = 656
-    Top = 58
+    Left = 424
+    Top = 136
   end
   object qrARQUIVOS_SISTEMA: TFDQuery
     Connection = ADO
     SQL.Strings = (
       'SELECT * FROM ARQUIVOS_SISTEMA ORDER BY ARQUIVO')
-    Left = 416
-    Top = 142
+    Left = 280
+    Top = 232
   end
   object qrGRAVA_TAMANHO_ARQUIVO: TFDQuery
     Connection = ADO
     SQL.Strings = (
       '/**QUERY VIA SISTEMA**/')
-    Left = 456
-    Top = 142
+    Left = 40
+    Top = 232
   end
   object qrINSERE_LETRA_MUSICA: TFDQuery
     Connection = ADO
     SQL.Strings = (
       'INSERT INTO MUSICAS_LETRA (MUSICA,LETRA,TEMPO,ORDEM,IMAGEM)'
       'VALUES(:MUSICA,:LETRA,:TEMPO,:ORDEM,:IMAGEM)')
-    Left = 256
-    Top = 142
+    Left = 472
+    Top = 328
     ParamData = <
       item
         Name = 'MUSICA'
@@ -95944,20 +95943,20 @@ object DM: TDM
     IndexDefs = <>
     Params = <>
     StoreDefs = True
-    Left = 16
-    Top = 58
+    Left = 376
+    Top = 88
   end
   object dsArquivos: TDataSource
     DataSet = cdsArquivos
-    Left = 136
-    Top = 100
+    Left = 184
+    Top = 136
   end
   object tmrPlayer: TTimer
     Enabled = False
     Interval = 1
     OnTimer = tmrPlayerTimer
-    Left = 296
-    Top = 310
+    Left = 616
+    Top = 424
   end
   object qrALTERA_LETRA_MUSICA: TFDQuery
     Connection = ADO
@@ -95968,8 +95967,8 @@ object DM: TDM
       'WHERE'
       '  ID=:ID AND'
       '  MUSICA=:MUSICA')
-    Left = 336
-    Top = 184
+    Left = 280
+    Top = 328
     ParamData = <
       item
         Name = 'LETRA'
@@ -95996,8 +95995,8 @@ object DM: TDM
       '  MUSICA=:MUSICA AND'
       '  EXIBE_SLIDE=TRUE'
       'ORDER BY ORDEM')
-    Left = 336
-    Top = 226
+    Left = 328
+    Top = 328
     ParamData = <
       item
         Name = 'MUSICA'
@@ -96009,8 +96008,8 @@ object DM: TDM
     SQL.Strings = (
       'INSERT INTO MUSICAS (NOME,IMAGEM)'
       'VALUES(:NOME,:IMAGEM)')
-    Left = 376
-    Top = 226
+    Left = 568
+    Top = 328
     ParamData = <
       item
         Name = 'NOME'
@@ -96025,16 +96024,16 @@ object DM: TDM
     Connection = ADO
     SQL.Strings = (
       'SELECT MAX(ID) AS MAX_ID FROM MUSICAS')
-    Left = 416
-    Top = 226
+    Left = 88
+    Top = 376
   end
   object qrINSERE_MUSICA_ALBUM: TFDQuery
     Connection = ADO
     SQL.Strings = (
       'INSERT INTO ALBUM_MUSICAS (ID_ALBUM,ID_MUSICA,FAIXA)'
       'VALUES(:ID_ALBUM,:ID_MUSICA,:FAIXA)')
-    Left = 296
-    Top = 226
+    Left = 40
+    Top = 376
     ParamData = <
       item
         Name = 'ID_ALBUM'
@@ -96090,10 +96089,10 @@ object DM: TDM
       end>
     PngWidth = 24
     PngHeight = 24
-    Left = 136
-    Top = 16
+    Left = 280
+    Top = 40
     Bitmap = {
-      494C010102004003A00318001800FFFFFFFFFF10FFFFFFFFFFFFFFFF424D3600
+      494C010102004003A40318001800FFFFFFFFFF10FFFFFFFFFFFFFFFF424D3600
       0000000000003600000028000000600000001800000001002000000000000024
       000000000000000000000000000000000000FFFFFF00FFFFFF00FFFFFF00FFFF
       FF00FFFFFF00FFFFFF00FFFFFF00FFFFFF00FFFFFF00FFFFFF00FFFFFF00FFFF
@@ -96406,8 +96405,8 @@ object DM: TDM
     SSLOptions.Mode = sslmClient
     SSLOptions.VerifyMode = []
     SSLOptions.VerifyDepth = 0
-    Left = 16
-    Top = 268
+    Left = 280
+    Top = 376
   end
   object qrHINOSN: TFDQuery
     Filtered = True
@@ -96420,8 +96419,8 @@ object DM: TDM
       
         '    (CAST(:VALOR AS INTEGER) <= 0 AND NOME_SEMAC LIKE '#39'%'#39' || :VA' +
         'LOR || '#39'%'#39')')
-    Left = 176
-    Top = 226
+    Left = 328
+    Top = 280
     ParamData = <
       item
         Name = 'VALOR'
@@ -96430,24 +96429,24 @@ object DM: TDM
   end
   object dsHINOSN: TDataSource
     DataSet = qrHINOSN
-    Left = 336
-    Top = 100
+    Left = 232
+    Top = 136
   end
   object qrMUSICA_ATUALIZAR: TFDQuery
     Connection = ADO
     SQL.Strings = (
       'SELECT * FROM MUSICAS'
       'WHERE `_AJUSTADO` < 1')
-    Left = 256
-    Top = 226
+    Left = 568
+    Top = 184
   end
   object qrALBUM_IGNORAR: TFDQuery
     Connection = ADO
     SQL.Strings = (
       'SELECT * FROM _ALBUM_IGNORAR'
       'WHERE ID = :ID')
-    Left = 576
-    Top = 226
+    Left = 664
+    Top = 328
     ParamData = <
       item
         Name = 'ID'
@@ -96468,8 +96467,8 @@ object DM: TDM
     StoreDefs = True
     AfterPost = ClientDataSetSaveToFile
     AfterDelete = ClientDataSetSaveToFile
-    Left = 696
-    Top = 16
+    Left = 280
+    Top = 88
     object StringField1: TStringField
       FieldName = 'ID'
     end
@@ -96498,16 +96497,16 @@ object DM: TDM
     Connection = ADO
     SQL.Strings = (
       'DELETE FROM _COLETANEAS_PERSONALIZADAS')
-    Left = 536
-    Top = 226
+    Left = 136
+    Top = 280
   end
   object qrADD_COLETANEAS_PERSO: TFDQuery
     Connection = ADO
     SQL.Strings = (
       'INSERT INTO _COLETANEAS_PERSONALIZADAS (ID,NOME,URL)'
       'VALUES(:ID,:NOME,:URL)')
-    Left = 456
-    Top = 226
+    Left = 472
+    Top = 232
     ParamData = <
       item
         Name = 'ID'
@@ -96531,8 +96530,8 @@ object DM: TDM
     IndexDefs = <>
     Params = <>
     StoreDefs = True
-    Left = 656
-    Top = 16
+    Left = 616
+    Top = 40
     object StringField11: TStringField
       FieldName = 'ID'
     end
@@ -96557,16 +96556,16 @@ object DM: TDM
   end
   object dsMonitores: TDataSource
     DataSet = cdsMonitores
-    Left = 496
-    Top = 100
+    Left = 184
+    Top = 184
   end
   object qrBUSCA_VERSAO: TFDQuery
     Filtered = True
     Connection = ADO
     SQL.Strings = (
       'SELECT * FROM VERSAO_BIBLICA WHERE SIGLA = :SIGLA')
-    Left = 400
-    Top = 322
+    Left = 616
+    Top = 232
     ParamData = <
       item
         Name = 'SIGLA'
@@ -96583,7 +96582,7 @@ object DM: TDM
       'LIVRO'
       'WHERE LIVRO.ID=1'
       'LIMIT 1')
-    Left = 488
-    Top = 370
+    Left = 520
+    Top = 232
   end
 end

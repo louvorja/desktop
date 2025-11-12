@@ -115,8 +115,8 @@ begin
   timer1.Enabled := false;
 
 
-  arquivo := fmIndex.dir_temp + '\'+fmIndex.param.Strings.Values['setup_name'+fIniciando.LANG];
-  baixado := fmIndex.DownloadArquivo(fmIndex.param.Strings.Values['download'+fIniciando.LANG]+'?lang='+fIniciando.LANG,arquivo);
+  arquivo := fmIndex.dir_temp + '\'+LowerCase(fIniciando.LANG)+'_'+fmIndex.param.Strings.Values['setup_name'];
+  baixado := fmIndex.DownloadArquivo(fmIndex.param.Strings.Values[LowerCase(fIniciando.LANG)+'_download']+'?lang='+fIniciando.LANG,arquivo);
 
 
   if (not FileExists(arquivo)) or (baixado = false) then

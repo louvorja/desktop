@@ -600,11 +600,17 @@ begin
 end;
 
 procedure TDM.tmrVersaoTimer(Sender: TObject);
+var
+  versao_atu: TStringList;
+  versao_hlp: TStringList;
 begin
   with fmIndex do
   begin
     tmrVersao.Enabled := False;
     verVersao();
+
+    if(tmrSair.enabled) then
+      Exit;
 
     if lerParam('Config', 'AbreHelp', '0') <> lblVersao.caption then
     begin
@@ -617,9 +623,21 @@ begin
       fIniciando.AppCreateForm(TfArquivosFalta, fArquivosFalta);
       fArquivosFalta.ShowModal;
 
-      fIniciando.AppCreateForm(TfHelp, fHelp);
-      fHelp.tabPage := '';
-      fHelp.ShowModal;
+      versao_atu := TStringList.Create;
+      versao_atu.Delimiter := '.';
+      versao_atu.DelimitedText := fmIndex.VersaoExe;
+
+      versao_hlp := TStringList.Create;
+      versao_hlp.Delimiter := '.';
+      versao_hlp.DelimitedText := lerParam('Config', 'AbreHelp', '0.0.0.0');
+
+      if (versao_atu[0] <>  versao_hlp[0])
+        or (versao_atu[1] <>  versao_hlp[1]) then
+      begin
+        fIniciando.AppCreateForm(TfHelp, fHelp);
+        fHelp.tabPage := '';
+        fHelp.ShowModal;
+      end;
 
       gravaParam('Config', 'AbreHelp', lblVersao.caption);
     end;

@@ -33,6 +33,11 @@ type
     senha_bd: string = 'bddbuscacdja';
   public
       LANG: string;
+      dir_dados: string;
+      dir_temp: string;
+      dir_config: string;
+      url_params: string;
+      api_token: string;
  end;
 
 var
@@ -56,7 +61,11 @@ procedure TfIniciando.FormCreate(Sender: TObject);
 var
   arq: string;
 begin
-  DM.ADO.Connected := false;
+  try
+    DM.ADO.Connected := false;
+  except
+  end;
+
   vLang.Strings.Clear;
   LANG := 'PT';
 
@@ -74,11 +83,6 @@ var
   lista: TStringList;
   Flags: Cardinal;
   externo: Boolean;
-  dir_dados: string;
-  dir_temp: string;
-  dir_config: string;
-  url_params: string;
-  api_token: string;
   TITULO: PChar;
 begin
   Timer1.Enabled := False;
@@ -117,55 +121,6 @@ begin
   end;
 
 
-  //**CARREGA BANCO DE DADOS****************************************************
-  (*
-  if not FileExists(dir_config + 'BD.mdb') then
-  begin
-    if (application.messagebox(PChar(Translate('Banco de Dados não localizado! Deseja tentar baixar da internet?')), TITULO, MB_yesno + mb_iconerror) <> 6) then
-    begin
-      application.terminate;
-      Exit;
-    end
-    else
-    begin
-      if not (InternetGetConnectedState(@Flags, 0)) then
-      begin
-        application.messagebox(PChar(Translate('Não foi possível conectar à internet! Verifique sua conexão e tente novamente.')), TITULO, MB_OK + mb_iconerror);
-        application.terminate;
-        Exit;
-      end;
-
-      lista := TStringList.Create;
-      lista.Add('config\BD.mdb');
-
-      AppCreateForm(TfAtualiza, fAtualiza);
-      fAtualiza.arquivos := lista;
-      fAtualiza.ShowModal;
-
-      if not FileExists(dir_config + 'BD.mdb') then
-      begin
-        application.messagebox(PChar(Translate('Não foi possível baixar o Banco de Dados da internet. Favor, instale seu programa novamente!')), TITULO, MB_ok + mb_iconerror);
-        application.terminate;
-        Exit;
-      end;
-    end;
-  end;
-  *)
-
-  DM.ADO.Connected := false;
-  DM.ADO.DriverName := 'SQLite';
-  DM.ADO.Params.Database := dir_config + 'database.db';
-  try
-    DM.ADO.Connected := true;
-  except
-    on E: Exception do
-    begin
-      application.messagebox(PChar(Translate('Não foi possível conectar ao Banco de Dados.')+#13#10+E.Message), TITULO, MB_OK + mb_iconerror);
-      application.terminate;
-    end;
-  end;
-
-
   //**CARREGA VARIAVEIS*********************************************************
   dir_dados := GetEnvironmentVariable('APPDATA')+'\LouvorJA\';
   dir_temp := GetEnvironmentVariable('TEMP')+'\LouvorJA\';
@@ -181,11 +136,82 @@ begin
   if not(DirectoryExists(dir_temp)) then
     dir_temp := GetEnvironmentVariable('TEMP')+'\';
 
+
+  if fileexists(dir_dados + 'config.ja') then
+    RenameFile(dir_dados + 'config.ja', dir_dados + 'config'+LANG+'.ja');
+
+
+
   //**ATIVANDO PROGRAMA*********************************************************
   AppCreateForm(TfmIndex, fmIndex);
 
   fmIndex.paramexec.Strings.Text := paramexec.Strings.Text;
   DM.PasswordDialog.Password := paramexec.Strings.Values['pwd'];
+
+
+  fmIndex.TITULO := TITULO;
+  fmIndex.arq_liturgia := arq_liturgia;
+  fmIndex.senha_bd := senha_bd;
+  fmIndex.dir_dados := dir_dados;
+  fmIndex.dir_temp := dir_temp;
+  fmIndex.dir_config := dir_config;
+  fmIndex.externo := externo;
+  fmIndex.url_params := url_params;
+  fmIndex.api_token := api_token;
+
+
+
+  //**CARREGA BANCO DE DADOS****************************************************
+  if not FileExists(dir_config + 'database.db') then
+  begin
+    if (application.messagebox(PChar(Translate('Banco de Dados não localizado! Deseja se conectar para fazer o download do banco de dados?')), TITULO, MB_yesno + mb_iconerror) <> 6) then
+    begin
+      application.terminate;
+      Exit;
+    end
+    else
+    begin
+      if not (InternetGetConnectedState(@Flags, 0)) then
+      begin
+        application.messagebox(PChar(Translate('Não foi possível conectar à internet! Verifique sua conexão e tente novamente.')), TITULO, MB_OK + mb_iconerror);
+        application.terminate;
+        Exit;
+      end;
+
+      lista := TStringList.Create;
+      lista.Add('config\database.db');
+
+      AppCreateForm(TfAtualiza, fAtualiza);
+      fAtualiza.arquivos := lista;
+      fAtualiza.ShowModal;
+
+      if not FileExists(dir_config + 'database.db') then
+      begin
+        application.messagebox(PChar(Translate('Não foi possível baixar o Banco de Dados da internet. Favor, instale seu programa novamente!')), TITULO, MB_ok + mb_iconerror);
+        application.terminate;
+        Exit;
+      end;
+    end;
+    Exit;
+  end;
+
+
+  DM.ADO.Connected := false;
+  DM.ADO.DriverName := 'SQLite';
+  DM.ADO.Params.Database := dir_config + 'database.db';
+  try
+    DM.ADO.Connected := true;
+  except
+    on E: Exception do
+    begin
+      application.messagebox(PChar(Translate('Não foi possível conectar ao Banco de Dados.')+#13#10+E.Message), TITULO, MB_OK + mb_iconerror);
+      application.terminate;
+    end;
+  end;
+
+
+
+
 
   //DESATIVA RECURSOS "ES"
   if (LANG = 'ES') then
@@ -198,18 +224,10 @@ begin
     fmIndex.imgImagemCapaModel.Picture := fmIndex.imgImagemCapaModelES.Picture;
   end;
 
-  fmIndex.TITULO := TITULO;
-  fmIndex.arq_liturgia := arq_liturgia;
-  fmIndex.senha_bd := senha_bd;
-  fmIndex.dir_dados := dir_dados;
-  fmIndex.dir_temp := dir_temp;
-  fmIndex.dir_config := dir_config;
-  fmIndex.externo := externo;
-  fmIndex.url_params := url_params;
-  fmIndex.api_token := api_token;
 
   fmIndex.desenvolvedor(paramexec.Strings.Values['des'] = '1');
   fmIndex.usaFontes(true);
+
 
 
   //**DETECTA MONITORES*********************************************************

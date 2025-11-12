@@ -98,8 +98,14 @@ begin
 //    pbProgresso.Position := 0;
 //    pbProgresso.Max := 0;
 
-    DM.qrARQUIVOS_SISTEMA.Locate('URL',arquivos[i],[]);
-    size := DM.qrARQUIVOS_SISTEMA.FieldByName('TAMANHO').AsInteger;
+    size := 0;
+
+    try
+      DM.qrARQUIVOS_SISTEMA.Locate('URL',arquivos[i],[]);
+      size := DM.qrARQUIVOS_SISTEMA.FieldByName('TAMANHO').AsInteger;
+    except
+    end;
+
     //ShowMessage(arquivos[i]+' / '+inttostr(size)+' / '+DM.qrARQUIVOS_SISTEMA.FieldByName('ARQUIVO').asstring);
     if (size <= 0) then
       size := IdFTP1.Size(ftp_dir+arquivo_ftp);
@@ -135,9 +141,6 @@ begin
         end;
       end;
     end;
-
-
-
 
   end;
 
@@ -292,7 +295,14 @@ begin
     LinkPag := DM.IdHTTP1.Get(fmIndex.url_params);
   except
     Sleep(2000);
-    LinkPag := DM.IdHTTP1.Get(fmIndex.url_params);
+    try
+      LinkPag := DM.IdHTTP1.Get(fmIndex.url_params);
+    except
+      Application.MessageBox(PChar('Não foi possível se conectar!'),fmIndex.TITULO,mb_ok+MB_ICONERROR);
+      tmrFecha.Enabled := True;
+      erro := True;
+      Exit;
+    end;
   end;
   //txt := fmIndex.ExtraiTexto(LinkPag, '<params>', '</params>');
   txt := LinkPag;
@@ -461,9 +471,11 @@ begin
   end;
 
   sTitulo.Caption := 'Obtendo informações dos arquivos...';
-  DM.qrARQUIVOS_SISTEMA.Close;
-  DM.qrARQUIVOS_SISTEMA.Open;
-
+  try
+    DM.qrARQUIVOS_SISTEMA.Close;
+    DM.qrARQUIVOS_SISTEMA.Open;
+  except
+  end;
   ftp_baixa();
 end;
 

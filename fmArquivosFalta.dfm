@@ -112,7 +112,7 @@ object fArquivosFalta: TfArquivosFalta
       CanFocused = True
       Down = False
       GroupIndex = 0
-      Caption = 'Cancelar'
+      Caption = 'Fechar'
       NumGlyphs = 1
       Spacing = 1
       Align = alRight

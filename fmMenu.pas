@@ -8,16 +8,16 @@ uses
   DBGrids, IniFiles, Menus, ExtCtrls, IdBaseComponent, IdIPWatch,
   IdAntiFreeze, DBClient, IdHTTP, AppEvnts, ValEdit, Mask, MPlayer, DateUtils,
   ActiveX, ShellApi, DBCtrls, OleCtrls, WinInet, OleCtnrs, CheckLst, pngimage,
-  ToolWin, jpeg, IdCoder, IdCoderMIME, bsSkinBoxCtrls, bsSkinCtrls,
-  bsribbon, BusinessSkinForm, bsSkinTabs, bsSkinExCtrls, bsSkinMenus,
-  bsSkinGrids, bsDBGrids, bsdbctrls, bsColorCtrls, bsSkinShellCtrls,
-  bsDialogs, Vcl.DBCGrids, ClipBrd, urlmon, RichEdit, bsButtonGroup,
-  bsPngImageList, IdAntiFreezeBase, System.Zip, System.UITypes,
+  ToolWin, jpeg, IdCoder, IdCoderMIME,Vcl.DBCGrids, ClipBrd, urlmon, RichEdit,
+  IdAntiFreezeBase, System.Zip, System.UITypes,
   MidasLib, IdStack, System.Types, Bass, Generics.Collections,
   Generics.Defaults, FireDAC.Stan.Intf, FireDAC.Stan.Option, FireDAC.Stan.Param,
   FireDAC.Stan.Error, FireDAC.DatS, FireDAC.Phys.Intf, FireDAC.DApt.Intf,
   FireDAC.Stan.Async, FireDAC.DApt, FireDAC.Comp.DataSet, FireDAC.Comp.Client,
-  System.RegularExpressions, System.NetEncoding, System.IOUtils;
+  System.RegularExpressions, System.NetEncoding, System.IOUtils,
+  BusinessSkinForm, bsSkinMenus, bsSkinCtrls, bsSkinTabs, bsButtonGroup,
+  bsSkinBoxCtrls, bsSkinExCtrls, bsribbon, bsdbctrls, bsSkinShellCtrls,
+  bsSkinGrids, bsDBGrids, bsColorCtrls, bsPngImageList;
   (*"MidasLib" NECESSÁRIA PARA EVITAR ERRO DE ACCESS VIOLATION NO DM.cds*)
 
 type
@@ -2246,7 +2246,7 @@ type
     move: Boolean;
 
     const
-      VERSAO_MIN_BD: string = '19.0';
+      VERSAO_MIN_BD: integer = 140;
       fonte: string = 'Arial Rounded MT Bold';
 
     //Permite arrastar form via Panel
@@ -5844,31 +5844,58 @@ function TfmIndex.verVersao():Boolean;
 var
   versao_atu: TStringList;
   versao_new: TStringList;
-  versao_min: TStringList;
   param_versao: String;
+  lista: TStringList;
+  Flags: Cardinal;
 begin
   DM.qrVERSAO.Close;
   DM.qrVERSAO.Open;
 
   versao_atu := TStringList.Create;
   versao_atu.Delimiter := '.';
-  versao_atu.DelimitedText := VersaoExe + '.' + DM.qrVERSAO.fieldbyname('VERSAO_BD').AsString;
+  versao_atu.DelimitedText := VersaoExe;
 
-  versao_min := TStringList.Create;
-  versao_min.Delimiter := '.';
-  versao_min.DelimitedText := VERSAO_MIN_BD;
-
-  lblVersao.Caption := versao_atu[0] + '.' + versao_atu[1] + '.' + versao_atu[4] + '.' + versao_atu[5];
+  lblVersao.Caption := versao_atu[0] + '.' + versao_atu[1] + '.' + DM.qrVERSAO.fieldbyname('VERSAO_BD').AsString;
   spVersao.Caption := 'versão '+lblVersao.Caption+' ';
 
-  if (StrToInt(trim(versao_atu[4])) < StrToInt(trim(versao_min[0]))) or
-     (
-        (StrToInt(trim(versao_atu[4])) = StrToInt(trim(versao_min[0]))) and
-        (StrToInt(trim(versao_atu[5])) < StrToInt(trim(versao_min[1])))
-     ) then
+  if (DM.qrVERSAO.fieldbyname('VERSAO_BD').AsInteger < VERSAO_MIN_BD) then
   begin
-    Result := True;
-    Application.MessageBox(PChar('Esta versão do sistema exige o banco de dados (config/BD.mdb) mais recente.' + #13#10 + 'Utilize o banco de dados disponibilizado no pacote desta versão!'), TITULO, mb_ok + mb_iconexclamation);
+    Result := false;
+
+    if (application.messagebox(PChar(fIniciando.Translate('Esta versão do sistema exige o banco de dados mais recente! Deseja se conectar para fazer o download do banco de dados?')), TITULO, MB_yesno + mb_iconquestion) <> 6) then
+    begin
+      application.terminate;
+      DM.tmrSair.enabled := true;
+      Exit;
+    end
+    else
+    begin
+      if not (InternetGetConnectedState(@Flags, 0)) then
+      begin
+        application.messagebox(PChar(fIniciando.Translate('Não foi possível conectar à internet! Verifique sua conexão e tente novamente.')), TITULO, MB_OK + mb_iconerror);
+        DM.tmrSair.enabled := true;
+        application.terminate;
+        Exit;
+      end;
+
+      lista := TStringList.Create;
+      lista.Add('config\database.db');
+
+      fIniciando.AppCreateForm(TfAtualiza, fAtualiza);
+      fAtualiza.arquivos := lista;
+      fAtualiza.ShowModal;
+
+      if not FileExists(dir_config + 'database.db') then
+      begin
+        application.messagebox(PChar(fIniciando.Translate('Não foi possível baixar o Banco de Dados da internet. Favor, instale seu programa novamente!')), TITULO, MB_ok + mb_iconerror);
+        DM.tmrSair.enabled := true;
+        application.terminate;
+        Exit;
+      end;
+    end;
+
+    ShellExecute(handle, nil, PChar(Application.ExeName), nil, nil, SW_SHOWNORMAL);
+    DM.tmrSair.enabled := true;
     Application.Terminate;
     Exit;
   end;
@@ -5889,17 +5916,6 @@ begin
      (
         (StrToInt(trim(versao_atu[0])) = StrToInt(trim(versao_new[0]))) and
         (StrToInt(trim(versao_atu[1])) < StrToInt(trim(versao_new[1])))
-     ) or
-     (
-        (StrToInt(trim(versao_atu[0])) = StrToInt(trim(versao_new[0]))) and
-        (StrToInt(trim(versao_atu[1])) = StrToInt(trim(versao_new[1]))) and
-        (StrToInt(trim(versao_atu[4])) < StrToInt(trim(versao_new[2])))
-     ) or
-     (
-        (StrToInt(trim(versao_atu[0])) = StrToInt(trim(versao_new[0]))) and
-        (StrToInt(trim(versao_atu[1])) = StrToInt(trim(versao_new[1]))) and
-        (StrToInt(trim(versao_atu[4])) = StrToInt(trim(versao_new[2]))) and
-        (StrToInt(trim(versao_atu[5])) < StrToInt(trim(versao_new[3])))
      ) then
   begin
     Result := True;
@@ -5909,11 +5925,62 @@ begin
     btwsDownload.Visible := true;
 
     fIniciando.AppCreateForm(TfNovaVersao, fNovaVersao);
-    fNovaVersao.lblVAtu.Caption := versao_atu[0]+'.'+versao_atu[1]+'.'+versao_atu[4]+'.'+versao_atu[5];
-    fNovaVersao.lblVNova.Caption := versao_new[0]+'.'+versao_new[1]+'.'+versao_new[2]+'.'+versao_new[3];
+    fNovaVersao.lblVAtu.Caption := versao_atu[0]+'.'+versao_atu[1];
+    fNovaVersao.lblVNova.Caption := versao_new[0]+'.'+versao_new[1];
     fNovaVersao.showmodal;
-  end
-  else Result := False;
+    Exit;
+  end;
+
+
+
+
+  if (Trim(param.Strings.Values['db_version']) = '') then
+  begin
+    Result := false;
+    Exit;
+  end;
+
+  if (DM.qrVERSAO.fieldbyname('VERSAO_BD').AsInteger < StrToInt(param.Strings.Values['db_version'])) then
+  begin
+    Result := false;
+
+    if (application.messagebox(PChar(fIniciando.Translate('Uma versão mais recente do banco de dados foi encontrada. Deseja baixar agora?')), TITULO, MB_yesno + mb_iconquestion) <> 6) then
+    begin
+      Result := false;
+      Exit;
+    end
+    else
+    begin
+      if not (InternetGetConnectedState(@Flags, 0)) then
+      begin
+        application.messagebox(PChar(fIniciando.Translate('Não foi possível conectar à internet! Verifique sua conexão e tente novamente.')), TITULO, MB_OK + mb_iconerror);
+        Result := false;
+        Exit;
+      end;
+
+      lista := TStringList.Create;
+      lista.Add('config\database.db');
+
+      fIniciando.AppCreateForm(TfAtualiza, fAtualiza);
+      fAtualiza.arquivos := lista;
+      fAtualiza.ShowModal;
+
+      if not FileExists(dir_config + 'database.db') then
+      begin
+        application.messagebox(PChar(fIniciando.Translate('Não foi possível baixar o Banco de Dados da internet. Favor, instale seu programa novamente!')), TITULO, MB_ok + mb_iconerror);
+        Result := false;
+        Exit;
+      end;
+    end;
+
+    ShellExecute(handle, nil, PChar(Application.ExeName), nil, nil, SW_SHOWNORMAL);
+    DM.tmrSair.enabled := true;
+    Application.Terminate;
+    Exit;
+  end;
+
+
+  Result := False;
 end;
 
 procedure TfmIndex.tsSorteioNMShow(Sender: TObject);

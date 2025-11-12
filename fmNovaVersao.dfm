@@ -57,8 +57,6 @@ object fNovaVersao: TfNovaVersao
     Spacing = 2
     Caption = 'bsSkinPanel1'
     Align = alBottom
-    ExplicitTop = 125
-    ExplicitWidth = 582
     object bsSkinButton2: TbsSkinButton
       AlignWithMargins = True
       Left = 473
@@ -100,7 +98,6 @@ object fNovaVersao: TfNovaVersao
       Spacing = 1
       Align = alRight
       OnClick = bsSkinButton2Click
-      ExplicitLeft = 467
     end
     object bsSkinButton3: TbsSkinButton
       AlignWithMargins = True
@@ -143,7 +140,6 @@ object fNovaVersao: TfNovaVersao
       Spacing = 1
       Align = alRight
       OnClick = bsSkinButton3Click
-      ExplicitLeft = 347
     end
   end
   object bsSkinPanel2: TbsSkinPanel
@@ -182,7 +178,6 @@ object fNovaVersao: TfNovaVersao
     Spacing = 2
     Caption = 'bsSkinPanel1'
     Align = alLeft
-    ExplicitHeight = 125
     object Image1: TbsPngImageView
       Left = 0
       Top = 0
@@ -234,8 +229,6 @@ object fNovaVersao: TfNovaVersao
     Spacing = 2
     Caption = 'bsSkinPanel1'
     Align = alClient
-    ExplicitWidth = 477
-    ExplicitHeight = 125
     object lbl1: TbsSkinStdLabel
       AlignWithMargins = True
       Left = 5
@@ -337,7 +330,6 @@ object fNovaVersao: TfNovaVersao
         end>
       ShowCaption = False
       TabOrder = 0
-      ExplicitWidth = 467
       object lbl2: TbsSkinStdLabel
         Left = 0
         Top = 0
