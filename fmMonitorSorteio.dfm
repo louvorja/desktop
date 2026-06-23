@@ -121,7 +121,7 @@ object fMonitorSorteio: TfMonitorSorteio
     Moveable = False
     Sizeable = False
     Align = alLeft
-    Caption = 'N'#250'meros do Sorteio'
+    Caption = 'Itens do Sorteio'
     OnClose = pnlSorteioEClose
     object lbSorteio: TbsSkinOfficeListBox
       Left = 1

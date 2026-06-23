@@ -33,7 +33,6 @@ uses
   fmMonitorTextoInterativo in 'fmMonitorTextoInterativo.pas' {fMonitorTextoInterativo},
   fmMonitorPainelDinamico in 'fmMonitorPainelDinamico.pas' {fMonitorPainelDinamico},
   fmMonitorCronometro in 'fmMonitorCronometro.pas' {fMonitorCronometro},
-  fmMonitorSorteioNomes in 'fmMonitorSorteioNomes.pas' {fMonitorSorteioNomes},
   fmMonitorSorteio in 'fmMonitorSorteio.pas' {fMonitorSorteio},
   fmMonitorCronometroCulto in 'fmMonitorCronometroCulto.pas' {fMonitorCronometroCulto},
   fmMonitorBibliaBusca in 'fmMonitorBibliaBusca.pas' {fMonitorBibliaBusca},

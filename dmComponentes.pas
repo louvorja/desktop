@@ -194,7 +194,6 @@ type
     qrBUSCA_VERSAO: TFDQuery;
     qrBUSCA_VERSAO_1: TFDQuery;
     procedure tmrSortearTimer(Sender: TObject);
-    procedure tmrSortearNMTimer(Sender: TObject);
     procedure tmrSorteioTimer(Sender: TObject);
     procedure tmrCronoTimer(Sender: TObject);
     procedure tmrMediaPlayerTimer(Sender: TObject);
@@ -225,7 +224,7 @@ implementation
 {%CLASSGROUP 'Vcl.Controls.TControl'}
 
 uses fmMenu, fmArquivosFalta, fmHelp, fmIniciando, fmTransmitir,
-  fmMonitorRelogio, fmMonitorCronometro, fmMonitorSorteioNomes,
+  fmMonitorRelogio, fmMonitorCronometro,
   fmMonitorSorteio, fmMonitorCronometroCulto;
 
 {$R *.dfm}
@@ -441,74 +440,6 @@ begin
   Application.Terminate;
 end;
 
-procedure TDM.tmrSortearNMTimer(Sender: TObject);
-var
-  sorteado: string;
-  Item: TbsSkinOfficeItem;
-begin
-  with fmIndex do
-  begin
-    if vSorteioAnimFimNM <= Now then
-    begin
-      pnlSorteioNM.DoubleBuffered := False;
-      tmrSortearNM.Enabled := false;
-
-      btLimpaSorteioNM.Enabled := true;
-      btSortearNM.Enabled := true;
-      btLimpaSorteioReiniciaNM.Enabled := true;
-      btLimpaSorteioLimpaNM.Enabled := true;
-      btAddSorteioNM.Enabled := true;
-      btImpSorteioNM.Enabled := true;
-
-      sorteado := opNumSorteadoNM.text;
-      lmdSorteioNM.Caption := sorteado;
-
-      lbSorteioNM.ItemIndex := StrToInt(vlSorteioNM.Strings.Values[sorteado]);
-      lbSorteioNM.Items[lbSorteioNM.ItemIndex].Checked := True;
-      lbSorteioNMItemCheckClick(Sender);
-
-      Item := lbSorteadoNM.Items.Insert(0);
-      Item.Caption := sorteado;
-
-      SorteioContador();
-      gSorteioNM.Value := gSorteioNM.MaxValue;
-
-      if fMonitorSorteioNomes <> nil then
-      begin
-        fMonitorSorteioNomes.lmdSorteioNM.Caption := lmdSorteioNM.Caption;
-        fMonitorSorteioNomes.lbSorteioNM.Items := lbSorteioNM.Items;
-        fMonitorSorteioNomes.lbSorteioNM.ItemIndex := lbSorteioNM.ItemIndex;
-        fMonitorSorteioNomes.lbSorteadoNM.Items := lbSorteadoNM.Items;
-        fMonitorSorteioNomes.lbSorteadoNM.ItemIndex := lbSorteadoNM.ItemIndex;
-        fMonitorSorteioNomes.gSorteioNM.MaxValue := gSorteioNM.MaxValue;
-        fMonitorSorteioNomes.gSorteioNM.MinValue := gSorteioNM.MinValue;
-        fMonitorSorteioNomes.gSorteioNM.Value := gSorteioNM.Value;
-        fMonitorSorteioNomes.pnlSorteioNM.DoubleBuffered := pnlSorteioNM.DoubleBuffered;
-      end;
-    end
-    else
-    begin
-      btLimpaSorteioNM.Enabled := false;
-      btSortearNM.Enabled := false;
-      btLimpaSorteioReiniciaNM.Enabled := false;
-      btLimpaSorteioLimpaNM.Enabled := false;
-      btAddSorteioNM.Enabled := false;
-      btImpSorteioNM.Enabled := false;
-
-      lmdSorteioNM.Caption := opNumSorteadoNM.text;
-      gSorteioNM.Value := trunc(now * 10000000000);
-
-      if fMonitorSorteioNomes <> nil then
-      begin
-        fMonitorSorteioNomes.lmdSorteioNM.Caption := lmdSorteioNM.Caption;
-        fMonitorSorteioNomes.gSorteioNM.MaxValue := gSorteioNM.MaxValue;
-        fMonitorSorteioNomes.gSorteioNM.MinValue := gSorteioNM.MinValue;
-        fMonitorSorteioNomes.gSorteioNM.Value := gSorteioNM.Value;
-        fMonitorSorteioNomes.pnlSorteioNM.DoubleBuffered := pnlSorteioNM.DoubleBuffered;
-      end;
-    end;
-  end;
-end;
 
 procedure TDM.tmrSortearTimer(Sender: TObject);
 var
@@ -588,13 +519,6 @@ begin
       Rnd := 0 + Random(vlSorteio.Strings.Count);
       opNumSorteado.text := vlSorteio.Cells[0, Rnd + 1];
       opNumIndice.Text := IntToStr(Rnd);
-    end;
-
-    if vlSorteioNM.Strings.Count > 0 then
-    begin
-      Rnd := 0 + Random(vlSorteioNM.Strings.Count);
-      opNumSorteadoNM.text := vlSorteioNM.Cells[0, Rnd + 1];
-      opNumIndiceNM.Text := IntToStr(Rnd);
     end;
   end;
 end;
