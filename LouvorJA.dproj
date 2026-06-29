@@ -222,10 +222,6 @@
             <Form>fMonitorCronometro</Form>
             <FormType>dfm</FormType>
         </DCCReference>
-        <DCCReference Include="fmMonitorSorteioNomes.pas">
-            <Form>fMonitorSorteioNomes</Form>
-            <FormType>dfm</FormType>
-        </DCCReference>
         <DCCReference Include="fmMonitorSorteio.pas">
             <Form>fMonitorSorteio</Form>
             <FormType>dfm</FormType>
