@@ -240,13 +240,6 @@ type
     bsSkinButton6: TbsSkinButton;
     GridPanel48: TGridPanel;
     bsSkinButton9: TbsSkinButton;
-    GridPanel49: TGridPanel;
-    bsSkinButton7: TbsSkinButton;
-    GridPanel50: TGridPanel;
-    bsSkinButton8: TbsSkinButton;
-    bsSkinButton10: TbsSkinButton;
-    bsSkinButton11: TbsSkinButton;
-    bsSkinButton12: TbsSkinButton;
     GridPanel51: TGridPanel;
     bsSkinStdLabel48: TbsSkinStdLabel;
     opSort_Nm: TbsSkinEdit;
@@ -755,8 +748,6 @@ type
     csSorteioCorFundo: TbsSkinColorButton;
     cbSorteioPosicaoFundo: TbsSkinComboBoxEx;
     bsSkinDivider12: TbsSkinDivider;
-    bsSkinGroupBox1: TbsSkinGroupBox;
-    bsSkinStdLabel12: TbsSkinStdLabel;
     bsSkinGroupBox10: TbsSkinGroupBox;
     bsSkinStdLabel13: TbsSkinStdLabel;
     tsEscSBImagem: TbsSkinFileEdit;
@@ -1799,24 +1790,16 @@ type
     procedure ckSorteioExpClick(Sender: TObject);
     procedure btFormatClick(Sender: TObject);
     procedure pnlFormatClose(Sender: TObject);
-    procedure tsSorteioNMShow(Sender: TObject);
     procedure bsSkinButton3Click(Sender: TObject);
     procedure bsSkinButton4Click(Sender: TObject);
     procedure bsSkinButton6Click(Sender: TObject);
     procedure bsSkinButton5Click(Sender: TObject);
     procedure bsSkinButton9Click(Sender: TObject);
-    procedure bsSkinButton8Click(Sender: TObject);
-    procedure lbSorteioNMItemCheckClick(Sender: TObject);
-    procedure bsSkinButton10Click(Sender: TObject);
-    procedure bsSkinButton12Click(Sender: TObject);
-    procedure bsSkinButton11Click(Sender: TObject);
-    procedure bsSkinButton7Click(Sender: TObject);
     procedure opSort_IniKeyUp(Sender: TObject; var Key: Word; Shift: TShiftState);
     procedure opSort_NmKeyUp(Sender: TObject; var Key: Word; Shift: TShiftState);
     procedure btAddSorteioNMClick(Sender: TObject);
     procedure btImpSorteioNMClick(Sender: TObject);
     procedure btSortearNMClick(Sender: TObject);
-    procedure ckSorteioExpNMClick(Sender: TObject);
     procedure btLimpaSorteioLimpaNMClick(Sender: TObject);
     procedure btLimpaSorteioReiniciaNMClick(Sender: TObject);
     procedure btLimpaSorteioNMClick(Sender: TObject);
@@ -2001,7 +1984,6 @@ type
     procedure tabLetrasChange(Sender: TObject);
     procedure ckSlideTxtFormatPersoClick(Sender: TObject);
     procedure seSorteioTempoChange(Sender: TObject);
-    procedure seSorteioTempoNMChange(Sender: TObject);
     function diretorio(dir:string):string;
     procedure processaArquivo(arq: string);
     procedure ExportarMusicaClick(Sender: TObject);
@@ -5914,10 +5896,6 @@ begin
   Result := False;
 end;
 
-procedure TfmIndex.tsSorteioNMShow(Sender: TObject);
-begin
-end;
-
 procedure TfmIndex.tsSorteioShow(Sender: TObject);
 begin
   PaginaMenuAtiva(bsSorteio,tsSorteio);
@@ -8821,18 +8799,6 @@ begin
   ajustaTexto('BIBLIA_BUSCA');
 end;
 
-procedure TfmIndex.bsSkinButton10Click(Sender: TObject);
-begin
-end;
-
-procedure TfmIndex.bsSkinButton11Click(Sender: TObject);
-begin
-end;
-
-procedure TfmIndex.bsSkinButton12Click(Sender: TObject);
-begin
-end;
-
 procedure TfmIndex.bsSkinButton13Click(Sender: TObject);
 begin
   lbCrono.Items.Clear;
@@ -9528,14 +9494,6 @@ begin
   copiaDadosTelaExtendida;
 end;
 
-procedure TfmIndex.bsSkinButton7Click(Sender: TObject);
-begin
-end;
-
-procedure TfmIndex.bsSkinButton8Click(Sender: TObject);
-begin
-end;
-
 procedure TfmIndex.bsSkinButton9Click(Sender: TObject);
 begin
   lbSorteado.Items.Clear;
@@ -10080,10 +10038,6 @@ begin
 //  MonthCalendar1.Visible := True;
 end;
 
-procedure TfmIndex.lbSorteioNMItemCheckClick(Sender: TObject);
-begin
-end;
-
 procedure TfmIndex.ckMonitorJanelaClick(Sender: TObject);
 begin
   if ckMonitorJanela.Checked then
@@ -10219,10 +10173,6 @@ begin
     gravaParam('Sorteio', 'Numeros Sorteados (Extendido)', '0');
 
   copiaDadosTelaExtendida;
-end;
-
-procedure TfmIndex.ckSorteioExpNMClick(Sender: TObject);
-begin
 end;
 
 procedure TfmIndex.ckMesmaJanelaClick(Sender: TObject);
@@ -10780,7 +10730,7 @@ begin
   if DM.tmrSorteio.Enabled = false then
     DM.tmrSorteio.Enabled := true;
 
-  lmdSorteio.Caption := '0000';
+  lmdSorteio.Caption := '----';
   lbSorteado.items.Clear;
   for i := 0 to lbSorteio.Items.Count - 1 do
   begin
@@ -10803,7 +10753,7 @@ begin
   if DM.tmrSorteio.Enabled = false then
     DM.tmrSorteio.Enabled := true;
 
-  lmdSorteio.Caption := '0000';
+  lmdSorteio.Caption := '----';
   if fMonitorSorteio <> nil then
     fMonitorSorteio.lmdSorteio.Caption := lmdSorteio.Caption;
 end;
@@ -10908,7 +10858,7 @@ begin
   end;
 
   lbSorteado.Items.Clear;
-  lmdSorteio.Caption := '0000';
+  lmdSorteio.Caption := '----';
   if fMonitorSorteio <> nil then
   begin
     fMonitorSorteio.lbSorteado.items.Clear;
@@ -11936,7 +11886,7 @@ begin
 
   if vlSorteio.Strings.Count <= 0 then
   begin
-    lmdSorteio.Caption := '0000';
+    lmdSorteio.Caption := '----';
     if fMonitorSorteio <> nil then
       fMonitorSorteio.lmdSorteio.Caption := lmdSorteio.Caption;
     application.messagebox('Não há itens disponíveis para serem sorteados!', TITULO, mb_ok + mb_iconexclamation);
@@ -15411,10 +15361,6 @@ end;
 procedure TfmIndex.seSorteioTempoChange(Sender: TObject);
 begin
   gravaParam('Sorteio', 'TempoAnimacao', FloatToStr(seSorteioTempo.Value));
-end;
-
-procedure TfmIndex.seSorteioTempoNMChange(Sender: TObject);
-begin
 end;
 
 procedure TfmIndex.seTxtITamanhoChange(Sender: TObject);
