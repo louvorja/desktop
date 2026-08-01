@@ -2189,6 +2189,9 @@ type
     //Aceita arquivos arrastados do Windows Explorer (drop na aba Liturgia)
     procedure WMDropFiles(var Msg: TWMDropFiles); message WM_DROPFILES;
 
+    //Atende o pedido de outra instância para trazer esta janela para frente
+    procedure WndProc(var Message: TMessage); override;
+
     //Define as ações para quando perder ou receber o foco
     procedure ApplicationDeactivate(Sender: TObject);
     procedure ApplicationActivate(Sender: TObject);
@@ -2244,7 +2247,7 @@ uses
   fmMonitorPainelDinamico, fmMonitorCronometro,
   fmMonitorSorteio, fmMonitorCronometroCulto, fmMonitorBibliaBusca,
   fmMonitorBiblia, fmMonitorMenuMusicas, fmIdentificaMonitores,
-  fmCopiaLiturgiaDia;
+  fmCopiaLiturgiaDia, uInstanciaUnica;
 
 {$R *.dfm}
 
@@ -4333,10 +4336,23 @@ begin
     Params := Params + ' "' + ParamStr(I) + '"';
   end;
 
+  //Solta o mutex antes de relançar, senão a nova cópia se recusa a abrir
+  LiberaInstanciaUnica;
+
   ShellExecute(0, 'open', PChar(ExeName), PChar(Params), nil, SW_SHOWNORMAL);
 
   DM.tmrSair.enabled := true;
   Halt;
+end;
+
+procedure TfmIndex.WndProc(var Message: TMessage);
+begin
+  if (WM_LOUVORJA_RESTAURA <> 0)
+    and (Message.Msg = WM_LOUVORJA_RESTAURA)
+    and (Cardinal(Message.WParam) = IdInstanciaUnica) then
+    TrazJanelaParaFrente(Self);
+
+  inherited WndProc(Message);
 end;
 
 procedure TfmIndex.RE_SetSelBgColor(RichEdit: TbsSkinRichEdit; AColor: TColor);
@@ -5807,6 +5823,9 @@ begin
       end;
     end;
 
+    //Solta o mutex antes de relançar, senão a nova cópia se recusa a abrir
+    LiberaInstanciaUnica;
+
     ShellExecute(handle, nil, PChar(Application.ExeName), nil, nil, SW_SHOWNORMAL);
     DM.tmrSair.enabled := true;
     Application.Terminate;
@@ -5885,6 +5904,9 @@ begin
         Exit;
       end;
     end;
+
+    //Solta o mutex antes de relançar, senão a nova cópia se recusa a abrir
+    LiberaInstanciaUnica;
 
     ShellExecute(handle, nil, PChar(Application.ExeName), nil, nil, SW_SHOWNORMAL);
     DM.tmrSair.enabled := true;
@@ -15724,6 +15746,9 @@ begin
       begin
         CopyFile(PChar(arq),PChar(dir_dados+ExtractFileName(arq)),false);
         application.MessageBox('Arquivo importado com sucesso!'+#13#10+'O sistema será reiniciado para que as novas configurações tenham efeito!',TITULO,mb_ok+mb_iconinformation);
+
+        //Solta o mutex antes de relançar, senão a nova cópia se recusa a abrir
+        LiberaInstanciaUnica;
 
         ShellExecute(Handle,'open', PChar(Application.ExeName), nil, nil, SW_SHOWNORMAL);
         Application.Terminate;

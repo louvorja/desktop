@@ -39,15 +39,22 @@ uses
   fmMonitorBiblia in 'fmMonitorBiblia.pas' {fMonitorBiblia},
   fmMonitorMenuMusicas in 'fmMonitorMenuMusicas.pas' {fMonitorMenuMusicas},
   fmIdentificaMonitores in 'fmIdentificaMonitores.pas' {fIdentificaMonitores},
-  fmCopiaLiturgiaDia in 'fmCopiaLiturgiaDia.pas';
+  fmCopiaLiturgiaDia in 'fmCopiaLiturgiaDia.pas',
+  uInstanciaUnica in 'uInstanciaUnica.pas';
 
 {$R *.res}
 
 begin
-  Application.Initialize;
-  Application.CreateForm(TDM, DM);
-  Application.CreateForm(TfIniciando, fIniciando);
-  Application.CreateForm(TfPlayer, fPlayer);
-  Application.CreateForm(TfTransmitir, fTransmitir);
-  Application.Run;
+  //Duas copias ao mesmo tempo disputam o mesmo banco, config e porta do servidor
+  if IniciaInstanciaUnica then
+  try
+    Application.Initialize;
+    Application.CreateForm(TDM, DM);
+    Application.CreateForm(TfIniciando, fIniciando);
+    Application.CreateForm(TfPlayer, fPlayer);
+    Application.CreateForm(TfTransmitir, fTransmitir);
+    Application.Run;
+  finally
+    LiberaInstanciaUnica;
+  end;
 end.
