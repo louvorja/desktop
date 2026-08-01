@@ -5992,6 +5992,10 @@ end;
 
 procedure TfmIndex.txtDecrChange(Sender: TObject);
 begin
+  //Durante a carga das configurações o texto é reescrito com o mesmo valor;
+  //zerar aqui interromperia um cronômetro em andamento
+  if carrega_opc then Exit;
+
   btZerarCronoClick(Sender);
 end;
 
@@ -8412,7 +8416,9 @@ var
   hora: string;
 begin
 //  pnlCrono.DoubleBuffered := False;
-  if (Sender <> nil) and (not TbsSkinSpeedButton(Sender).Enabled) then Exit;
+  //Enabled é lido por método virtual: com Sender que não seja TControl (um TTimer,
+  //por exemplo) o cast direto desvia para fora da VMT e gera access violation
+  if (Sender is TControl) and (not TControl(Sender).Enabled) then Exit;
   DM.tmrCrono.Enabled := false;
   btIniciarCrono.Caption := 'Iniciar';
   btIniciarCrono.ImageIndex := 20;
@@ -10016,7 +10022,11 @@ begin
   if txtDecr.Enabled then
     txtDecr.Setfocus;
 
-  btZerarCronoClick(Sender);
+  //Só zera quando a direção foi trocada pelo usuário, não durante a carga das
+  //configurações (que reaplica o mesmo valor a cada redimensionamento da janela)
+  if not carrega_opc then
+    btZerarCronoClick(Sender);
+
   gravaParam('Cronometro', 'Direcao', IntToStr(rbDirecao.ItemIndex));
 end;
 

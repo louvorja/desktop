@@ -352,9 +352,10 @@ begin
         if tsCronometro.TabVisible = false then
           abrePagina(tsCronometro);
         PageControl1.ActivePage := tsCronometro;
-        //application.messagebox('Tempo esgotado!', PChar(TITULO + ' - Cronômetro'), mb_ok + mb_iconinformation);
+        //application.messagebox('Tempo esgotado!', PChar(TITULO + ' - Cronï¿½metro'), mb_ok + mb_iconinformation);
         btZerarCrono.Tag := 1;
-        btZerarCronoClick(Sender);
+        //Sender aqui e o proprio tmrCrono; a rotina espera o botao
+        btZerarCronoClick(btZerarCrono);
       end;
     end;
   end;
