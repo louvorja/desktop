@@ -3742,8 +3742,13 @@ begin
             (c is TCustomTreeView) or (c is TCustomListView) or
             (c is TCustomComboBox) or (c is TCustomRichEdit) or
             //equivalentes com skin, que não descendem dos acima
-            (c is TbsSkinCustomDBGrid) or (c is TbsSkinOfficeListBox);
+            (c is TbsSkinOfficeListBox);
 end;
+
+//Row, TopRow e VisibleRowCount são protegidos no grid com skin. Esta classe de
+//acesso, declarada aqui, permite lê-los sem alterar a biblioteca.
+type
+  TAcessoGrade = class(TbsSkinCustomGrid);
 
 {
   O VCL entrega a roda do mouse ao controle que está com FOCO, não ao que está
@@ -3806,6 +3811,7 @@ var
   janela: HWND;
   ctl: TControl;
   fonte: TDataSource;
+  colunas, visiveis, indice: Integer;
   passo, desloc: Integer;
   delta: SmallInt;
 begin
@@ -3883,22 +3889,87 @@ begin
 
     //Grades de registros rolam andando no dataset. O TbsSkinDBCtrlGrid não
     //descende do TDBCtrlGrid e não trata a roda - é o que a Bíblia inteira usa
+    {
+      Grids de linhas (editor de slides, tela do apresentador). O tratamento
+      nativo deles anda um registro por clique, então era preciso percorrer
+      todas as linhas da tela antes de a página rolar. Aqui vale a mesma
+      correção das grades de cartões: o deslocamento parte da posição da linha
+      atual dentro das visíveis.
+    }
+    if (ctl is TbsSkinCustomDBGrid) then
+    begin
+      fonte := TbsSkinCustomDBGrid(ctl).DataSource;
+      if Assigned(fonte) and Assigned(fonte.DataSet) and fonte.DataSet.Active then
+      begin
+        visiveis := TAcessoGrade(ctl).VisibleRowCount;
+        //Posição da linha atual dentro da parte visível
+        indice := TAcessoGrade(ctl).Row - TAcessoGrade(ctl).TopRow;
+
+        if (visiveis < 1) then
+          visiveis := 1;
+        if (indice < 0) then
+          indice := 0;
+
+        if (delta > 0) then
+          fonte.DataSet.MoveBy(-(indice + passo))
+        else
+          fonte.DataSet.MoveBy((visiveis - 1 - indice) + passo);
+        Result := True;
+      end;
+      Exit;
+    end;
+
     fonte := nil;
+    colunas := 1;
+    visiveis := 1;
+    indice := 0;
     if (ctl is TDBCtrlGrid) then
-      fonte := TDBCtrlGrid(ctl).DataSource
+    begin
+      fonte := TDBCtrlGrid(ctl).DataSource;
+      colunas := TDBCtrlGrid(ctl).ColCount;
+      visiveis := TDBCtrlGrid(ctl).PanelCount;
+      indice := TDBCtrlGrid(ctl).PanelIndex;
+    end
     else if (ctl is TbsSkinDBCtrlGrid) then
+    begin
       fonte := TbsSkinDBCtrlGrid(ctl).DataSource;
+      colunas := TbsSkinDBCtrlGrid(ctl).ColCount;
+      visiveis := TbsSkinDBCtrlGrid(ctl).PanelCount;
+      indice := TbsSkinDBCtrlGrid(ctl).PanelIndex;
+    end;
 
     if (fonte <> nil) then
     begin
       if Assigned(fonte.DataSet) and fonte.DataSet.Active then
       begin
-        //Um registro por clique da roda, e não as 3 linhas do Windows: aqui
-        //cada registro é um cartão inteiro, e 3 de uma vez vira um salto
+        {
+          Anda uma LINHA inteira por clique, e não um registro solto.
+
+          Estas grades distribuem os registros em colunas (a de capítulos
+          calcula quantas cabem pela largura da tela). Andar de um em um faria
+          cada item mudar de coluna a cada clique, e exigiria um clique por
+          item para descer a tela - eram 104 cliques na tela de capítulos.
+          Sendo o passo igual ao número de colunas, cada item fica na mesma
+          coluna. Nas listas de uma coluna só, isso dá um item por clique.
+
+          O deslocamento é calculado a partir da posição do cursor dentro dos
+          painéis visíveis. Sem isso, a grade rola só o necessário para manter
+          o cursor à vista, e o primeiro clique a partir do topo andava
+          diferente dos demais.
+        }
+        if (colunas < 1) then
+          colunas := 1;
+        if (visiveis < 1) then
+          visiveis := 1;
+        if (indice < 0) then
+          indice := 0;
+
         if (delta > 0) then
-          fonte.DataSet.MoveBy(-1)
+          //Sobe: leva o cursor para antes do primeiro painel visível
+          fonte.DataSet.MoveBy(-(indice + colunas))
         else
-          fonte.DataSet.MoveBy(1);
+          //Desce: leva o cursor para depois do último painel visível
+          fonte.DataSet.MoveBy((visiveis - 1 - indice) + colunas);
         Result := True;
       end;
       Exit;
