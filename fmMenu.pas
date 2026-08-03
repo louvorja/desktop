@@ -8292,7 +8292,9 @@ begin
     MediaPlayer1.Display := fPlayer.Panel1;
     MediaPlayer1.FileName := url;
     MediaPlayer1.Open;
-    MediaPlayer1.DisplayRect := fPlayer.Panel1.ClientRect;
+    //Só depois do Open o MCI sabe informar as dimensões do vídeo
+    if (fPlayer <> nil) then
+      fPlayer.ajustaProporcao;
     MediaPlayer1.Play;
     btplPlay.Down := True;
     btplPause.Down := False;

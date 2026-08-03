@@ -3,7 +3,8 @@ unit fmPlayer;
 interface
 
 uses
-  Winapi.Windows, Winapi.Messages, System.SysUtils, System.Variants, System.Classes, Vcl.Graphics,
+  Winapi.Windows, Winapi.Messages, Winapi.MMSystem, System.SysUtils,
+  System.Variants, System.Classes, System.Math, Vcl.Graphics,
   Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.ExtCtrls, Vcl.MPlayer;
 
 type
@@ -17,6 +18,7 @@ type
     procedure CreateParams(var Params: TCreateParams); override;
   public
     { Public declarations }
+    procedure ajustaProporcao;
   end;
 
 var
@@ -70,9 +72,57 @@ begin
   fmIndex.FormKeyUp(Sender, Key, Shift);
 end;
 
+//Encaixa o video na area preservando a proporcao original. Preencher a area
+//inteira, como era feito antes, distorce qualquer video cuja proporcao nao
+//seja a mesma da tela. As sobras ficam pretas, cor do Panel1.
+procedure TfPlayer.ajustaProporcao;
+var
+  consulta: TMCI_Anim_Rect_Parms;
+  area, destino: TRect;
+  larg, alt, w, h: Integer;
+  escala: Double;
+begin
+  area := Panel1.ClientRect;
+
+  larg := 0;
+  alt := 0;
+
+  //O MCI devolve o retangulo da origem como (esquerda, topo, largura, altura)
+  FillChar(consulta, SizeOf(consulta), 0);
+  if (fmIndex.MediaPlayer1.DeviceID <> 0)
+    and (mciSendCommand(fmIndex.MediaPlayer1.DeviceID, MCI_WHERE,
+                        MCI_ANIM_WHERE_SOURCE, DWORD_PTR(@consulta)) = 0) then
+  begin
+    larg := consulta.rc.Right;
+    alt := consulta.rc.Bottom;
+  end;
+
+  //Sem dimensao conhecida (audio, ou formato que o MCI nao informa):
+  //mantem o comportamento anterior
+  if (larg <= 0) or (alt <= 0) then
+  begin
+    fmIndex.MediaPlayer1.DisplayRect := area;
+    Exit;
+  end;
+
+  escala := Min(area.Width / larg, area.Height / alt);
+  w := Round(larg * escala);
+  h := Round(alt * escala);
+
+  //Atencao: o MCI le este retangulo como (esquerda, topo, LARGURA, ALTURA),
+  //e nao como coordenadas. Preencher Right/Bottom com as bordas faz o video
+  //passar da tela. A propria VCL usa essa convencao em SetDisplayRect.
+  destino.Left := area.Left + (area.Width - w) div 2;
+  destino.Top := area.Top + (area.Height - h) div 2;
+  destino.Right := w;
+  destino.Bottom := h;
+
+  fmIndex.MediaPlayer1.DisplayRect := destino;
+end;
+
 procedure TfPlayer.FormResize(Sender: TObject);
 begin
-  fmIndex.MediaPlayer1.DisplayRect := Panel1.ClientRect;
+  ajustaProporcao;
 end;
 
 end.
