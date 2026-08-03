@@ -2511,7 +2511,7 @@ object fEditorSlides: TfEditorSlides
     DrawGraphicFields = False
     UseColumnsFont = False
     DefaultRowHeight = 17
-    MouseWheelSupport = False
+    MouseWheelSupport = True
     SaveMultiSelection = False
     PickListBoxSkinDataName = 'listbox'
     PickListBoxCaptionMode = False
@@ -2559,7 +2559,7 @@ object fEditorSlides: TfEditorSlides
       DrawGraphicFields = False
       UseColumnsFont = False
       DefaultRowHeight = 60
-      MouseWheelSupport = False
+      MouseWheelSupport = True
       SaveMultiSelection = False
       PickListBoxSkinDataName = 'listbox'
       PickListBoxCaptionMode = False
