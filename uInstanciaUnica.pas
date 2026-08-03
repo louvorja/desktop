@@ -25,6 +25,10 @@ var
   //Mensagem registrada no Windows: pede para a instancia ja aberta vir para frente
   WM_LOUVORJA_RESTAURA: UINT = 0;
 
+  //Avisa a janela principal que chegou um arquivo de outra instancia. E postada
+  //para si mesma: abrir o arquivo dentro do WM_COPYDATA travaria quem enviou.
+  WM_LOUVORJA_ABRE_ARQUIVO: UINT = 0;
+
 //Retorna False quando ja existe outra instancia; nesse caso o programa nao deve iniciar
 function IniciaInstanciaUnica: Boolean;
 
@@ -43,6 +47,10 @@ function IdInstanciaUnica: Cardinal;
 //Traz a janela para frente, preservando o estado maximizado
 procedure TrazJanelaParaFrente(Form: TForm);
 
+//Entrega um arquivo para a instancia ja aberta. False quando nao ha para quem
+//entregar (a janela principal ainda nao existe, por exemplo)
+function EnviaArquivoParaInstancia(const arq: string): Boolean;
+
 implementation
 
 {$OVERFLOWCHECKS OFF}
@@ -51,8 +59,15 @@ implementation
 const
   ASFW_ANY = DWORD(-1);
 
+  //Nao esta declarado na Winapi.Windows desta versao do Delphi
+  PROCESS_QUERY_LIMITED_INFORMATION = $1000;
+
 function AllowSetForegroundWindow(dwProcessId: DWORD): BOOL; stdcall;
   external 'user32.dll' name 'AllowSetForegroundWindow';
+
+function QueryFullProcessImageName(hProcess: THandle; dwFlags: DWORD;
+  lpExeName: PChar; var lpdwSize: DWORD): BOOL; stdcall;
+  external 'kernel32.dll' name 'QueryFullProcessImageNameW';
 
 var
   FMutex: THandle = 0;
@@ -178,21 +193,106 @@ begin
   FMutex := 0;
 end;
 
-procedure AvisaJaAberto;
+//Pede para a instancia ja aberta aparecer na frente
+procedure ChamaInstanciaAberta;
 begin
-  MessageBox(0, PChar(Texto('O Louvor JA já está aberto!')), PChar(TituloPrograma),
-    MB_OK or MB_ICONINFORMATION or MB_SETFOREGROUND or MB_TOPMOST);
-
   //Autoriza a outra instancia a roubar o foco antes de pedir que ela apareca
   AllowSetForegroundWindow(ASFW_ANY);
   PostMessage(HWND_BROADCAST, WM_LOUVORJA_RESTAURA, WPARAM(IdInstanciaUnica), 0);
 end;
 
+procedure AvisaJaAberto;
+begin
+  MessageBox(0, PChar(Texto('O Louvor JA já está aberto!')), PChar(TituloPrograma),
+    MB_OK or MB_ICONINFORMATION or MB_SETFOREGROUND or MB_TOPMOST);
+
+  ChamaInstanciaAberta;
+end;
+
+var
+  FArquivo: string;
+  FEntregue: Boolean;
+
+//Caminho do executavel dono da janela. Serve para so falar com outra copia do
+//proprio LouvorJA, sem depender do nome da classe da janela.
+function ExeDaJanela(Wnd: HWND): string;
+var
+  pid: DWORD;
+  proc: THandle;
+  buf: array[0..MAX_PATH] of Char;
+  tam: DWORD;
+begin
+  Result := '';
+
+  pid := 0;
+  GetWindowThreadProcessId(Wnd, @pid);
+  if (pid = 0) or (pid = GetCurrentProcessId) then
+    Exit;
+
+  proc := OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid);
+  if proc = 0 then
+    Exit;
+  try
+    tam := Length(buf);
+    if QueryFullProcessImageName(proc, 0, buf, tam) then
+      SetString(Result, buf, tam);
+  finally
+    CloseHandle(proc);
+  end;
+end;
+
+//Entrega o arquivo por WM_COPYDATA a uma janela de outra copia do programa.
+//O identificador da instancia vai junto: uma copia rodando com outra pasta de
+//configuracao ignora a mensagem.
+function EnumeraJanelas(Wnd: HWND; Param: LPARAM): BOOL; stdcall;
+var
+  dados: TCopyDataStruct;
+begin
+  Result := True;
+
+  if not SameText(ExeDaJanela(Wnd), ParamStr(0)) then
+    Exit;
+
+  dados.dwData := IdInstanciaUnica;
+  dados.cbData := (Length(FArquivo) + 1) * SizeOf(Char);
+  dados.lpData := PChar(FArquivo);
+
+  if (SendMessage(Wnd, WM_COPYDATA, 0, LPARAM(@dados)) = 1) then
+  begin
+    FEntregue := True;
+    Result := False; //achou quem recebesse: para a busca
+  end;
+end;
+
+function EnviaArquivoParaInstancia(const arq: string): Boolean;
+begin
+  FArquivo := arq;
+  FEntregue := False;
+
+  AllowSetForegroundWindow(ASFW_ANY);
+  EnumWindows(@EnumeraJanelas, 0);
+
+  Result := FEntregue;
+end;
+
 function IniciaInstanciaUnica: Boolean;
+var
+  arq: string;
 begin
   Result := ReservaInstancia;
-  if not Result then
-    AvisaJaAberto;
+  if Result then
+    Exit;
+
+  //Arquivo aberto pelo Windows com o programa ja rodando: entrega para a
+  //instancia existente em vez de avisar que ja esta aberto
+  arq := ParamStr(1);
+  if FileExists(arq) and EnviaArquivoParaInstancia(arq) then
+  begin
+    ChamaInstanciaAberta;
+    Exit;
+  end;
+
+  AvisaJaAberto;
 end;
 
 procedure LiberaInstanciaUnica;
@@ -206,7 +306,8 @@ begin
 end;
 
 initialization
-  WM_LOUVORJA_RESTAURA := RegisterWindowMessage('LouvorJA.RestauraInstancia');
+  WM_LOUVORJA_RESTAURA     := RegisterWindowMessage('LouvorJA.RestauraInstancia');
+  WM_LOUVORJA_ABRE_ARQUIVO := RegisterWindowMessage('LouvorJA.AbreArquivo');
 
 finalization
   LiberaInstanciaUnica;

@@ -2175,6 +2175,7 @@ type
     move_panel: TPanel;
     move: Boolean;
     FLogChamadas: Integer;  // contador para checagem de truncamento do louvorja.log
+    arquivo_recebido: string;  // caminho enviado por outra instância (WM_COPYDATA)
 
     const
       VERSAO_MIN_BD: integer = 140;
@@ -4346,11 +4347,40 @@ begin
 end;
 
 procedure TfmIndex.WndProc(var Message: TMessage);
+var
+  dados: PCopyDataStruct;
 begin
   if (WM_LOUVORJA_RESTAURA <> 0)
     and (Message.Msg = WM_LOUVORJA_RESTAURA)
     and (Cardinal(Message.WParam) = IdInstanciaUnica) then
     TrazJanelaParaFrente(Self);
+
+  //Arquivo aberto pelo Windows enquanto o programa já estava rodando: a outra
+  //instância entrega o caminho aqui em vez de tentar abrir uma segunda cópia
+  if (Message.Msg = WM_COPYDATA) then
+  begin
+    dados := PCopyDataStruct(Message.LParam);
+    if (dados <> nil) and (Cardinal(dados^.dwData) = IdInstanciaUnica) then
+    begin
+      arquivo_recebido := PChar(dados^.lpData);
+      Message.Result := 1;
+
+      //Abrir aqui dentro travaria a instância que enviou até o arquivo
+      //terminar de abrir; a mensagem postada trata isso depois
+      PostMessage(Handle, WM_LOUVORJA_ABRE_ARQUIVO, 0, 0);
+      Exit;
+    end;
+  end;
+
+  if (WM_LOUVORJA_ABRE_ARQUIVO <> 0)
+    and (Message.Msg = WM_LOUVORJA_ABRE_ARQUIVO)
+    and (Trim(arquivo_recebido) <> '') then
+  begin
+    //Mesmo caminho usado pelos itens da liturgia
+    abrirArquivo(arquivo_recebido);
+    arquivo_recebido := '';
+    Exit;
+  end;
 
   inherited WndProc(Message);
 end;
