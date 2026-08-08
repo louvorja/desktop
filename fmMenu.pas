@@ -5970,6 +5970,11 @@ end;
 
 procedure TfmIndex.txtDecrChange(Sender: TObject);
 begin
+  //carregaConfiguracoes atribui txtDecr.Text ao abrir a página, e isso cai
+  //aqui como se o operador tivesse digitado: zerava um cronômetro que já
+  //estivesse rodando
+  if carrega_opc then Exit;
+
   btZerarCronoClick(Sender);
 end;
 
@@ -9991,8 +9996,16 @@ end;
 procedure TfmIndex.rbDirecaoClick(Sender: TObject);
 begin
   txtDecr.Enabled := (rbDirecao.ItemIndex = 1);
-  if txtDecr.Enabled then
+
+  //CanFocus cobre página ainda não exibida: focar controle invisível levanta
+  //exceção, e este handler é chamado por carregaConfiguracoes antes de a
+  //aba do cronômetro aparecer alguma vez
+  if txtDecr.Enabled and txtDecr.CanFocus then
     txtDecr.Setfocus;
+
+  //Durante o carregamento das opções nada aqui é escolha do operador, e
+  //zerar apagaria um cronômetro em andamento
+  if carrega_opc then Exit;
 
   btZerarCronoClick(Sender);
   gravaParam('Cronometro', 'Direcao', IntToStr(rbDirecao.ItemIndex));
