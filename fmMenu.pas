@@ -3247,7 +3247,7 @@ end;
 
 procedure TfmIndex.abreLetraMusicaAlbum(albumID: Integer;musicaID: Integer);
 var
-  monitor: integer;
+  monitor, monitor_ret: integer;
   i: integer;
 begin
   monitor := strtoint(lerParam('Musicas', 'Monitor', '2'));
@@ -3256,6 +3256,12 @@ begin
   else
     monitor := monitor - 1;
 
+  monitor_ret := strtoint(lerParam('Musicas', 'MonitorRetorno', '3'));
+  if (Screen.MonitorCount < monitor_ret) then
+    monitor_ret := 0
+  else
+    monitor_ret := monitor_ret - 1;
+
   if fMusica <> nil then
     fMusica.Close;
 
@@ -3263,7 +3269,23 @@ begin
   if fMusicaOperador <> nil then
     fMusicaOperador.Close;
 
+  if fMusicaRetorno <> nil then
+    fMusicaRetorno.Close;
+
   fIniciando.AppCreateForm(TfMusicaOperador, fMusicaOperador);
+
+  {
+    O fMusicaRetorno precisa existir mesmo quando o modo retorno está
+    desligado: o fmMusica o acessa em dezenas de pontos protegido apenas pela
+    configuração ModoRetorno, e não por verificação de nulo.
+
+    Esta rotina não o criava. Quem usasse "Reproduzir Todas" sem ter aberto
+    uma música antes recebia violação de acesso, porque o formulário era nil.
+    Abrir uma música primeiro mascarava o problema: o caminho normal o cria, e
+    formulários aqui só são escondidos, nunca liberados - então o ponteiro
+    continuava válido depois.
+  }
+  fIniciando.AppCreateForm(TfMusicaRetorno, fMusicaRetorno);
 
   if (lerParam('Musicas', 'ModoOperador', '1') = '1') then
   begin
@@ -3275,6 +3297,22 @@ begin
     fMusicaOperador.pnlProgress.Visible := true;
     fMusicaOperador.btPausePlay.Visible := true;
     fMusicaOperador.Show;
+  end;
+
+  //Mesmo tratamento do caminho normal (abreLetraMusica)
+  if (lerParam('Musicas', 'ModoRetorno', '1') = '1') then
+  begin
+    fMusicaRetorno.lblTempo.Caption := '';
+    fMusicaRetorno.gSlide.Value := 0;
+    fMusicaRetorno.gSlideTotal.Value := 0;
+    fMusicaRetorno.lblSlides.Caption := '';
+    fMusicaRetorno.pnlProgress.Visible := true;
+    fMusicaRetorno.Show;
+
+    fMusicaRetorno.Left := monitorInfo(monitor_ret).Left;
+    fMusicaRetorno.Top := monitorInfo(monitor_ret).Top;
+    fMusicaRetorno.Width := monitorInfo(monitor_ret).Width;
+    fMusicaRetorno.Height := monitorInfo(monitor_ret).Height;
   end;
 
   fIniciando.AppCreateForm(TfMusica, fMusica);
