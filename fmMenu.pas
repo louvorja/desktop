@@ -2207,6 +2207,20 @@ type
     procedure RemoveGanchoRoda;
     procedure ForceDirectoriesRecursive(const Path: string);
 
+    //As listas de livros e capítulos são desenhadas em colunas. Quando o total
+    //de itens não fecha a última coluna, o fim da rolagem embaralha a ordem
+    //visual. Completa a consulta com registros vazios até fechar a coluna.
+    procedure completaColunasGrade(q: TFDQuery; grade: TbsSkinDBCtrlGrid;
+      const campoChave: string);
+    //True quando o registro atual é um desses registros de preenchimento,
+    //que não corresponde a item nenhum
+    function registroEmBranco(q: TFDQuery; const campoChave: string): Boolean;
+
+    procedure completaColunasCapitulos;
+    function capituloEmBranco: Boolean;
+    procedure completaColunasLivros;
+    function livroEmBranco: Boolean;
+
     //Helpers internos para acesso ao liturgia.ja (UTF-8 garantido + migração on-demand)
     function caminhoLiturgia: string;
     procedure garanteUtf8Liturgia;
@@ -2757,6 +2771,77 @@ procedure TfmIndex.ForceDirectoriesRecursive(const Path: string);
 begin
   if not TDirectory.Exists(Path) then
     ForceDirectories(Path);
+end;
+
+function TfmIndex.registroEmBranco(q: TFDQuery; const campoChave: string): Boolean;
+begin
+  Result := q.Active and q.FieldByName(campoChave).IsNull;
+end;
+
+procedure TfmIndex.completaColunasGrade(q: TFDQuery; grade: TbsSkinDBCtrlGrid;
+  const campoChave: string);
+var
+  colunas, faltam, i: integer;
+begin
+  if not q.Active then
+    Exit;
+
+  //Sem CachedUpdates os registros de preenchimento iriam parar no banco
+  q.CachedUpdates := True;
+  //Os campos herdam o NOT NULL das colunas e recusariam o registro vazio no Post
+  for i := 0 to q.FieldCount - 1 do
+    q.Fields[i].Required := False;
+
+  q.DisableControls;
+  try
+    //Limpa o preenchimento anterior: a rotina roda de novo quando a grade
+    //já foi preenchida com outro número de colunas
+    q.First;
+    while not q.Eof do
+      if q.FieldByName(campoChave).IsNull then
+        q.Delete
+      else
+        q.Next;
+
+    //RecordCount só conta o que já foi buscado do banco; sem isso a conta
+    //sai errada quando o resultado é maior que o tamanho do lote
+    q.FetchAll;
+
+    colunas := grade.ColCount;
+    if (colunas < 2) then
+      Exit;
+
+    faltam := (colunas - (q.RecordCount mod colunas)) mod colunas;
+    for i := 1 to faltam do
+    begin
+      q.Append;
+      q.FieldByName(campoChave).Clear;
+      q.Post;
+    end;
+  finally
+    q.First;
+    q.EnableControls;
+  end;
+end;
+
+function TfmIndex.capituloEmBranco: Boolean;
+begin
+  Result := registroEmBranco(DM.qrBIBLIA_CAPITULOS, 'CAPITULO');
+end;
+
+procedure TfmIndex.completaColunasCapitulos;
+begin
+  completaColunasGrade(DM.qrBIBLIA_CAPITULOS, DBCtrlGridBibliaCapitulo, 'CAPITULO');
+end;
+
+function TfmIndex.livroEmBranco: Boolean;
+begin
+  Result := registroEmBranco(DM.qrBIBLIA_LIVROS, 'ID');
+end;
+
+procedure TfmIndex.completaColunasLivros;
+begin
+  completaColunasGrade(DM.qrBIBLIA_LIVROS, DBCtrlGridBibliaLivro, 'ID');
 end;
 
 procedure TfmIndex.FormActivate(Sender: TObject);
@@ -5264,6 +5349,7 @@ begin
   begin
     DM.qrBIBLIA_LIVROS.Close;
     DM.qrBIBLIA_LIVROS.Open;
+    completaColunasLivros;
     DM.qrBIBLIA_LIVROS.Locate('ID',loadCol.Strings.Values['BIBLIA_LIVRO'],[]);
     busBibliaLivro.ItemIndex := StrToInt(loadCol.Strings.Values['BIBLIA_LIVRO'])-1;
   end
@@ -5273,6 +5359,7 @@ begin
     DM.qrBIBLIA_CAPITULOS.ParamByName('LIVRO').Value := StrToInt('0'+loadCol.Strings.Values['BIBLIA_LIVRO']);
     DM.qrBIBLIA_CAPITULOS.ParamByName('VERSAO').Value := loadCol.Strings.Values['BIBLIA_VERSAO'];
     DM.qrBIBLIA_CAPITULOS.Open;
+    completaColunasCapitulos;
     busBibliaCapitulo.Items.Clear;
     for i := 1 to DM.qrBIBLIA_LIVROS.FieldByName('CAPITULOS').AsInteger do
     begin
@@ -10615,9 +10702,15 @@ begin
       if (DM.qrBIBLIA_LIVROS.Bof) then
       begin
         DM.qrBIBLIA_LIVROS.Last;
+        //O fim da consulta pode ser preenchimento de coluna: volta até um livro
+        while livroEmBranco and not DM.qrBIBLIA_LIVROS.Bof do
+          DM.qrBIBLIA_LIVROS.Prior;
       end;
       DBCtrlGridBibliaLivroClick(Sender);
       DM.qrBIBLIA_CAPITULOS.Last;
+      //O fim da consulta pode ser preenchimento de coluna: volta até um capítulo
+      while capituloEmBranco and not DM.qrBIBLIA_CAPITULOS.Bof do
+        DM.qrBIBLIA_CAPITULOS.Prior;
     end;
     DBCtrlGridBibliaCapituloClick(Sender);
     DM.qrBIBLIA_VERSICULOS.Last;
@@ -10656,11 +10749,13 @@ begin
   begin
     DM.qrBIBLIA_CAPITULOS.Locate('CAPITULO',loadCol.Strings.Values['BIBLIA_P_CAPITULO'],[]);
     DM.qrBIBLIA_CAPITULOS.Next;
-    if (DM.qrBIBLIA_CAPITULOS.Eof) then
+    //Preenchimento de coluna depois do último capítulo vale como fim da lista
+    if (DM.qrBIBLIA_CAPITULOS.Eof) or capituloEmBranco then
     begin
       DM.qrBIBLIA_LIVROS.Locate('ID',loadCol.Strings.Values['BIBLIA_P_LIVRO'],[]);
       DM.qrBIBLIA_LIVROS.Next;
-      if (DM.qrBIBLIA_LIVROS.Eof) then
+      //Preenchimento de coluna depois do último livro vale como fim da lista
+      if (DM.qrBIBLIA_LIVROS.Eof) or livroEmBranco then
       begin
         DM.qrBIBLIA_LIVROS.First;
       end;
@@ -12676,9 +12771,13 @@ begin
 
     DBCtrlGridBibliaLivro.RowCount := Trunc(DBCtrlGridBibliaLivro.ClientHeight / 75);
     DBCtrlGridBibliaLivro.ColCount := Trunc(DBCtrlGridBibliaLivro.ClientWidth / 75);
+    //A consulta pode ter sido aberta antes da grade saber quantas colunas tem
+    completaColunasLivros;
 
     DBCtrlGridBibliaCapitulo.RowCount := Trunc(DBCtrlGridBibliaCapitulo.ClientHeight / 40);
     DBCtrlGridBibliaCapitulo.ColCount := Trunc(DBCtrlGridBibliaCapitulo.ClientWidth / 40);
+    //A consulta pode ter sido aberta antes da grade saber quantas colunas tem
+    completaColunasCapitulos;
 
     DBCtrlGridBibliaVersiculo.RowCount := Trunc(DBCtrlGridBibliaVersiculo.ClientHeight / 80);
     DBCtrlGridBibliaVersiculo.ColCount := 1;
@@ -15263,6 +15362,10 @@ end;
 
 procedure TfmIndex.DBCtrlGridBibliaCapituloClick(Sender: TObject);
 begin
+  //Preenchimento de coluna: não representa capítulo, não responde ao clique
+  if capituloEmBranco then
+    Exit;
+
   if (loadCol.Strings.Values['BIBLIA_LIVRO'] = loadCol.Strings.Values['BIBLIA_P_LIVRO']) and
      (DBCtrlGridBibliaCapitulo.DataSource.DataSet.FieldByName('CAPITULO').AsString = loadCol.Strings.Values['BIBLIA_P_CAPITULO']) then
   begin
@@ -15290,7 +15393,12 @@ begin
   try
     R:= Rect(1, 1, DBCtrlGrid.PanelWidth-2, DBCtrlGrid.PanelHeight-2);
 
-    if (StrToInt('0'+loadCol.Strings.Values['BIBLIA_CAPITULO']) = DBCtrlGrid.DataSource.DataSet.FieldByName('CAPITULO').AsInteger) then
+    if DBCtrlGrid.DataSource.DataSet.FieldByName('CAPITULO').IsNull then
+    begin
+      //Preenchimento de coluna: fica igual ao espaço livre da grade
+      DBCtrlGrid.Canvas.Brush.Color := DBCtrlGrid.Color;
+    end
+    else if (StrToInt('0'+loadCol.Strings.Values['BIBLIA_CAPITULO']) = DBCtrlGrid.DataSource.DataSet.FieldByName('CAPITULO').AsInteger) then
     begin
       txtdbBibliaCapitulo.Font.Color := $002E2E2E;
       txtdbBibliaCapitulo.DefaultFont.Color := $002E2E2E;
@@ -15382,6 +15490,10 @@ end;
 
 procedure TfmIndex.DBCtrlGridBibliaLivroClick(Sender: TObject);
 begin
+  //Preenchimento de coluna: não representa livro, não responde ao clique
+  if livroEmBranco then
+    Exit;
+
   if (DBCtrlGridBibliaLivro.DataSource.DataSet.FieldByName('ID').AsString = loadCol.Strings.Values['BIBLIA_P_LIVRO']) then
   begin
     loadCol.Strings.Values['BIBLIA_CAPITULO'] := loadCol.Strings.Values['BIBLIA_P_CAPITULO'];
@@ -15414,7 +15526,13 @@ begin
     R:= Rect(1, 1, DBCtrlGrid.PanelWidth-2, DBCtrlGrid.PanelHeight-2);
 
     txtdbBibliaLivroNm.Visible := (DBCtrlGrid.DataSource.DataSet.FieldByName('SIGLA_N').AsString <> '');
-    if (StrToInt('0'+loadCol.Strings.Values['BIBLIA_LIVRO']) = DBCtrlGrid.DataSource.DataSet.FieldByName('ID').AsInteger) then
+
+    if DBCtrlGrid.DataSource.DataSet.FieldByName('ID').IsNull then
+    begin
+      //Preenchimento de coluna: fica igual ao espaço livre da grade
+      DBCtrlGrid.Canvas.Brush.Color := DBCtrlGrid.Color;
+    end
+    else if (StrToInt('0'+loadCol.Strings.Values['BIBLIA_LIVRO']) = DBCtrlGrid.DataSource.DataSet.FieldByName('ID').AsInteger) then
     begin
       txtdbBibliaLivroSg.Font.Color := $002E2E2E;
       txtdbBibliaLivroSg.DefaultFont.Color := $002E2E2E;
