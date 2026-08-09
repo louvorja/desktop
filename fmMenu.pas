@@ -3379,10 +3379,14 @@ begin
   else
     monitor := monitor - 1;
 
-  if fVideoOn <> nil then
+  //Reaproveita a janela em vez de criar outra: a anterior só era escondida,
+  //nunca liberada, e cada uma mantém um navegador WebView2 com processo
+  //próprio (~75 MB por vídeo aberto, medido)
+  if fVideoOn = nil then
+    fIniciando.AppCreateForm(TfVideoOn, fVideoOn)
+  else
     fVideoOn.Close;
 
-  fIniciando.AppCreateForm(TfVideoOn, fVideoOn);
   fVideoOn.videoID := videoID;
   fVideoOn.Caption := videoTITULO;
 
