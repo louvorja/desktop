@@ -13086,7 +13086,7 @@ object fmIndex: TfmIndex
     TabHeight = 22
     TabOrder = 4
     Visible = False
-    MouseWheelSupport = True
+    MouseWheelSupport = False
     TabExtededDraw = False
     ButtonTabSkinDataName = 'resizetoolbutton'
     TabsOffset = 0
@@ -29411,7 +29411,7 @@ object fmIndex: TfmIndex
                   DrawGraphicFields = False
                   UseColumnsFont = False
                   DefaultRowHeight = 20
-                  MouseWheelSupport = False
+                  MouseWheelSupport = True
                   SaveMultiSelection = False
                   PickListBoxSkinDataName = 'listbox'
                   PickListBoxCaptionMode = False
@@ -29495,7 +29495,7 @@ object fmIndex: TfmIndex
                   DrawGraphicFields = False
                   UseColumnsFont = False
                   DefaultRowHeight = 20
-                  MouseWheelSupport = False
+                  MouseWheelSupport = True
                   SaveMultiSelection = False
                   PickListBoxSkinDataName = 'listbox'
                   PickListBoxCaptionMode = False
@@ -30033,7 +30033,7 @@ object fmIndex: TfmIndex
               ParentFont = False
               Style = tsFlatButtons
               TabOrder = 0
-              MouseWheelSupport = True
+              MouseWheelSupport = False
               TabExtededDraw = False
               ButtonTabSkinDataName = 'resizetoolbutton'
               TabsOffset = 0
@@ -32395,7 +32395,7 @@ object fmIndex: TfmIndex
                   DrawGraphicFields = False
                   UseColumnsFont = False
                   DefaultRowHeight = 17
-                  MouseWheelSupport = False
+                  MouseWheelSupport = True
                   SaveMultiSelection = False
                   PickListBoxSkinDataName = 'listbox'
                   PickListBoxCaptionMode = False
