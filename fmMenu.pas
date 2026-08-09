@@ -2175,6 +2175,7 @@ type
     move_panel: TPanel;
     move: Boolean;
     FLogChamadas: Integer;  // contador para checagem de truncamento do louvorja.log
+    arquivo_recebido: string;  // caminho enviado por outra instância (WM_COPYDATA)
 
     const
       VERSAO_MIN_BD: integer = 140;
@@ -2188,6 +2189,9 @@ type
 
     //Aceita arquivos arrastados do Windows Explorer (drop na aba Liturgia)
     procedure WMDropFiles(var Msg: TWMDropFiles); message WM_DROPFILES;
+
+    //Atende o pedido de outra instância para trazer esta janela para frente
+    procedure WndProc(var Message: TMessage); override;
 
     //Define as ações para quando perder ou receber o foco
     procedure ApplicationDeactivate(Sender: TObject);
@@ -2244,7 +2248,7 @@ uses
   fmMonitorPainelDinamico, fmMonitorCronometro,
   fmMonitorSorteio, fmMonitorCronometroCulto, fmMonitorBibliaBusca,
   fmMonitorBiblia, fmMonitorMenuMusicas, fmIdentificaMonitores,
-  fmCopiaLiturgiaDia;
+  fmCopiaLiturgiaDia, uInstanciaUnica;
 
 {$R *.dfm}
 
@@ -4333,10 +4337,52 @@ begin
     Params := Params + ' "' + ParamStr(I) + '"';
   end;
 
+  //Solta o mutex antes de relançar, senão a nova cópia se recusa a abrir
+  LiberaInstanciaUnica;
+
   ShellExecute(0, 'open', PChar(ExeName), PChar(Params), nil, SW_SHOWNORMAL);
 
   DM.tmrSair.enabled := true;
   Halt;
+end;
+
+procedure TfmIndex.WndProc(var Message: TMessage);
+var
+  dados: PCopyDataStruct;
+begin
+  if (WM_LOUVORJA_RESTAURA <> 0)
+    and (Message.Msg = WM_LOUVORJA_RESTAURA)
+    and (Cardinal(Message.WParam) = IdInstanciaUnica) then
+    TrazJanelaParaFrente(Self);
+
+  //Arquivo aberto pelo Windows enquanto o programa já estava rodando: a outra
+  //instância entrega o caminho aqui em vez de tentar abrir uma segunda cópia
+  if (Message.Msg = WM_COPYDATA) then
+  begin
+    dados := PCopyDataStruct(Message.LParam);
+    if (dados <> nil) and (Cardinal(dados^.dwData) = IdInstanciaUnica) then
+    begin
+      arquivo_recebido := PChar(dados^.lpData);
+      Message.Result := 1;
+
+      //Abrir aqui dentro travaria a instância que enviou até o arquivo
+      //terminar de abrir; a mensagem postada trata isso depois
+      PostMessage(Handle, WM_LOUVORJA_ABRE_ARQUIVO, 0, 0);
+      Exit;
+    end;
+  end;
+
+  if (WM_LOUVORJA_ABRE_ARQUIVO <> 0)
+    and (Message.Msg = WM_LOUVORJA_ABRE_ARQUIVO)
+    and (Trim(arquivo_recebido) <> '') then
+  begin
+    //Mesmo caminho usado pelos itens da liturgia
+    abrirArquivo(arquivo_recebido);
+    arquivo_recebido := '';
+    Exit;
+  end;
+
+  inherited WndProc(Message);
 end;
 
 procedure TfmIndex.RE_SetSelBgColor(RichEdit: TbsSkinRichEdit; AColor: TColor);
@@ -5807,6 +5853,9 @@ begin
       end;
     end;
 
+    //Solta o mutex antes de relançar, senão a nova cópia se recusa a abrir
+    LiberaInstanciaUnica;
+
     ShellExecute(handle, nil, PChar(Application.ExeName), nil, nil, SW_SHOWNORMAL);
     DM.tmrSair.enabled := true;
     Application.Terminate;
@@ -5885,6 +5934,9 @@ begin
         Exit;
       end;
     end;
+
+    //Solta o mutex antes de relançar, senão a nova cópia se recusa a abrir
+    LiberaInstanciaUnica;
 
     ShellExecute(handle, nil, PChar(Application.ExeName), nil, nil, SW_SHOWNORMAL);
     DM.tmrSair.enabled := true;
@@ -5970,6 +6022,10 @@ end;
 
 procedure TfmIndex.txtDecrChange(Sender: TObject);
 begin
+  //Durante a carga das configurações o texto é reescrito com o mesmo valor;
+  //zerar aqui interromperia um cronômetro em andamento
+  if carrega_opc then Exit;
+
   btZerarCronoClick(Sender);
 end;
 
@@ -8390,7 +8446,9 @@ var
   hora: string;
 begin
 //  pnlCrono.DoubleBuffered := False;
-  if (Sender <> nil) and (not TbsSkinSpeedButton(Sender).Enabled) then Exit;
+  //Enabled é lido por método virtual: com Sender que não seja TControl (um TTimer,
+  //por exemplo) o cast direto desvia para fora da VMT e gera access violation
+  if (Sender is TControl) and (not TControl(Sender).Enabled) then Exit;
   DM.tmrCrono.Enabled := false;
   btIniciarCrono.Caption := 'Iniciar';
   btIniciarCrono.ImageIndex := 20;
@@ -9994,7 +10052,11 @@ begin
   if txtDecr.Enabled then
     txtDecr.Setfocus;
 
-  btZerarCronoClick(Sender);
+  //Só zera quando a direção foi trocada pelo usuário, não durante a carga das
+  //configurações (que reaplica o mesmo valor a cada redimensionamento da janela)
+  if not carrega_opc then
+    btZerarCronoClick(Sender);
+
   gravaParam('Cronometro', 'Direcao', IntToStr(rbDirecao.ItemIndex));
 end;
 
@@ -15724,6 +15786,9 @@ begin
       begin
         CopyFile(PChar(arq),PChar(dir_dados+ExtractFileName(arq)),false);
         application.MessageBox('Arquivo importado com sucesso!'+#13#10+'O sistema será reiniciado para que as novas configurações tenham efeito!',TITULO,mb_ok+mb_iconinformation);
+
+        //Solta o mutex antes de relançar, senão a nova cópia se recusa a abrir
+        LiberaInstanciaUnica;
 
         ShellExecute(Handle,'open', PChar(Application.ExeName), nil, nil, SW_SHOWNORMAL);
         Application.Terminate;

@@ -98,7 +98,7 @@
         <Icon_MainIcon>LouvorJA_Icon3.ico</Icon_MainIcon>
         <VerInfo_Locale>1033</VerInfo_Locale>
         <VerInfo_MajorVer>26</VerInfo_MajorVer>
-        <DCC_ExeOutput>X:\Software\</DCC_ExeOutput>
+        <DCC_ExeOutput>C:\Users\cliente\Downloads\Louvor JA\</DCC_ExeOutput>
         <VerInfo_IncludeVerInfo>true</VerInfo_IncludeVerInfo>
         <VerInfo_AutoGenVersion>true</VerInfo_AutoGenVersion>
         <VerInfo_Keys>CompanyName=;FileVersion=26.8.0.0;InternalName=;LegalCopyright=;LegalTrademarks=;OriginalFilename=;ProductVersion=1.0.0.0;Comments=;ProgramID=com.embarcadero.$(MSBuildProjectName);FileDescription=$(MSBuildProjectName);ProductName=$(MSBuildProjectName)</VerInfo_Keys>
@@ -247,6 +247,7 @@
             <FormType>dfm</FormType>
         </DCCReference>
         <DCCReference Include="fmCopiaLiturgiaDia.pas"/>
+        <DCCReference Include="uInstanciaUnica.pas"/>
         <BuildConfiguration Include="Release">
             <Key>Cfg_2</Key>
             <CfgParent>Base</CfgParent>
