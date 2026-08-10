@@ -16,7 +16,7 @@ interface
 
 uses
   Winapi.Windows, Winapi.Messages, System.SysUtils, System.Classes, System.Types,
-  Vcl.Controls, Vcl.Forms, Vcl.StdCtrls, bsSkinCtrls, Vcl.ExtCtrls,
+  System.JSON, Vcl.Controls, Vcl.Forms, Vcl.StdCtrls, bsSkinCtrls, Vcl.ExtCtrls,
   uWVBrowser, uWVWindowParent, uWVLoader, uWVTypes, uWVTypeLibrary;
 
 const
@@ -29,8 +29,21 @@ const
   //autoplay depende também de AutoplayPolicy (ver initialization).
   //Legenda não é tratada aqui: cc_load_policy=0 apenas deixa de forçá-la, não
   //a desliga. Quem desliga é o script injetado (ver desligaLegendasYoutube).
+  //enablejsapi=1 abre o canal de comandos usado pelo painel do programa: sem
+  //ele o iframe ignora tudo que for enviado por postMessage.
   PARAMS_YOUTUBE = 'autoplay=1&controls=0&modestbranding=1&rel=0' +
-                   '&iv_load_policy=3&disablekb=1&fs=0&playsinline=1';
+                   '&iv_load_policy=3&disablekb=1&fs=0&playsinline=1' +
+                   '&enablejsapi=1';
+
+  //Identificador do ExecuteScript que devolve o estado, para distinguir a
+  //resposta dele das dos outros scripts no OnExecuteScriptCompleted
+  EXEC_ESTADO = 101;
+
+  //Estados do player do YouTube (os que interessam aqui)
+  YT_ENCERRADO   = 0;
+  YT_REPRODUZIDO = 1;
+  YT_PAUSADO     = 2;
+  YT_BUFFER      = 3;
 
 type
   TfVideoOn = class(TForm)
@@ -62,7 +75,10 @@ type
       const aController: ICoreWebView2Controller;
       const aArgs: ICoreWebView2AcceleratorKeyPressedEventArgs);
     procedure desligaLegendasYoutube;
-    procedure aplicaParametrosYoutube;
+    procedure instalaScriptPlayer;
+    procedure wvVideoExecuteScriptCompleted(Sender: TObject; aErrorCode: HRESULT;
+      const aResultObjectAsJson: wvstring; aExecutionID: integer);
+    procedure comando(const funcao, argumentos: string);
     procedure ajustaTamanho;
     procedure mostraErro(const msg: string);
   protected
@@ -72,6 +88,21 @@ type
     { Public declarations }
     videoID: string;
     id: string;
+
+    //Estado do vídeo, alimentado por consultaEstado. É cache: o YouTube não
+    //responde de forma síncrona, então quem lê aqui vê o último valor
+    //recebido, com no máximo um ciclo de atraso.
+    tempoAtual: Double;
+    duracao: Double;
+    estado: Integer;
+
+    //Controle pelo painel do programa
+    procedure reproduz;
+    procedure pausa;
+    procedure buscaSegundos(segundos: Double);
+    procedure consultaEstado;
+    function tocando: Boolean;
+    function terminou: Boolean;
   end;
 
 var
@@ -107,6 +138,8 @@ begin
   wvVideo.OnInitializationError := wvVideoInitializationError;
   //Com o foco dentro do navegador o OnKeyUp do formulário não recebe mais nada
   wvVideo.OnAcceleratorKeyPressed := wvVideoAcceleratorKeyPressed;
+  //Retorno das consultas de estado feitas pelo painel de controle
+  wvVideo.OnExecuteScriptCompleted := wvVideoExecuteScriptCompleted;
 
   //O runtime carrega de forma assíncrona: pode não estar pronto no 1º vídeo
   tmrCriaBrowser := TTimer.Create(Self);
@@ -136,6 +169,11 @@ begin
   videoID := '';
   encerrando := False;
   url_pendente := URL_PLAYER + Trim(id);
+
+  //Vídeo novo: o estado do anterior não vale mais
+  tempoAtual := 0;
+  duracao := 0;
+  estado := -1;
 
   pnlLoading.Visible := True;
   pnlLoading.BringToFront;
@@ -187,26 +225,224 @@ begin
     '};' +
     'por();' +
     'document.addEventListener("DOMContentLoaded",por);' +
-    //O player carrega a legenda depois: reaplica por alguns segundos
-    'var n=0,t=setInterval(function(){por();if(++n>40)clearInterval(t);},250);' +
+    {
+      Sem prazo para terminar. Antes este ciclo parava depois de dez segundos,
+      e o YouTube recarrega o módulo de legendas ao saltar no tempo - passado
+      esse prazo, a legenda voltava. É uma consulta ao DOM a cada 400 ms, e o
+      intervalo morre junto com o documento, então trocar de vídeo não acumula
+      temporizador.
+    }
+    'setInterval(por,400);' +
     '})();');
 end;
 
-//A página do projeto monta o iframe sem parâmetros e ignora os que recebe na
-//URL, então reescrevemos o src pelo lado do pai. Carregar o embed direto como
-//página não serve: o YouTube recusa fora de um iframe com origem válida.
-procedure TfVideoOn.aplicaParametrosYoutube;
+{
+  Prepara a página do player: reescreve o iframe com os parâmetros e instala a
+  ponte de controle.
+
+  Roda como script de documento, não a partir do OnNavigationCompleted. O
+  motivo é uma corrida real: ao reaproveitar a janela, o about:blank disparado
+  pelo fechamento anterior ainda está a caminho quando a nova navegação
+  começa, e o evento chegava duas vezes. O iframe era reescrito duas vezes em
+  menos de um segundo e o player do YouTube ficava presoem "buffer", sem
+  nunca começar a tocar - o primeiro vídeo funcionava, os seguintes não.
+
+  Como script de documento, isto roda uma vez por documento por construção, e
+  o identificador do vídeo vem da própria URL, sem depender do estado do
+  Delphi no instante certo.
+
+  A página do projeto monta o iframe sem parâmetro nenhum e ignora os que
+  recebe na URL, por isso a reescrita. Carregar o embed direto como página não
+  serve: o YouTube recusa fora de um iframe com origem válida.
+}
+procedure TfVideoOn.instalaScriptPlayer;
 begin
-  if (Trim(id) = '') then
+  wvVideo.AddScriptToExecuteOnDocumentCreated(
+    '(function(){' +
+    //Só na página do player, e uma vez por documento
+    'if(location.href.indexOf("' + URL_PLAYER + '")!==0)return;' +
+    'if(window.__lja)return;' +
+
+    'var id="";' +
+    'try{id=new URLSearchParams(location.search).get("v")||"";}catch(e){}' +
+    'if(!id)return;' +
+
+    'window.__lja={tempo:0,duracao:0,estado:-1,pronto:false};' +
+
+    'window.addEventListener("message",function(e){' +
+    'if(String(e.origin).indexOf("youtube.com")<0)return;' +
+    'var d=e.data;' +
+    'try{if(typeof d==="string")d=JSON.parse(d);}catch(x){return;}' +
+    'if(!d)return;' +
+    'if(d.event==="onReady"||d.event==="initialDelivery")window.__lja.pronto=true;' +
+    'var i=d.info||{};' +
+    'if(typeof i.currentTime==="number")window.__lja.tempo=i.currentTime;' +
+    'if(typeof i.duration==="number"&&i.duration>0)window.__lja.duracao=i.duration;' +
+    'if(typeof i.playerState==="number")window.__lja.estado=i.playerState;' +
+    //progressState chega junto e costuma ser o valor mais atual
+    'if(i.progressState){' +
+    'if(typeof i.progressState.current==="number")window.__lja.tempo=i.progressState.current;' +
+    'if(typeof i.progressState.duration==="number"&&i.progressState.duration>0)' +
+    'window.__lja.duracao=i.progressState.duration;' +
+    '}' +
+    '});' +
+
+    'window.__ljaCmd=function(f,a){' +
+    'var fr=document.querySelector("iframe");' +
+    'if(!fr||!fr.contentWindow)return false;' +
+    'fr.contentWindow.postMessage(JSON.stringify({event:"command",func:f,args:a||[]}),"*");' +
+    'return true;' +
+    '};' +
+
+    //Sem o "listening" o YouTube não devolve informação nenhuma
+    'var ouvir=function(){' +
+    'var fr=document.querySelector("iframe");' +
+    'if(!fr||!fr.contentWindow)return;' +
+    'fr.contentWindow.postMessage(JSON.stringify(' +
+    '{event:"listening",id:1,channel:"widget"}),"*");' +
+    '};' +
+
+    //O iframe é criado pela página depois deste script: espera aparecer e
+    //marca para não reescrever de novo
+    'var aplicar=function(){' +
+    'var f=document.querySelector("iframe");' +
+    'if(!f)return false;' +
+    'if(f.getAttribute("data-lja")==="1")return true;' +
+    'f.setAttribute("data-lja","1");' +
+    'f.setAttribute("allow","autoplay; encrypted-media; picture-in-picture");' +
+    'f.src="https://www.youtube.com/embed/"+id+"?' + PARAMS_YOUTUBE +
+    '&origin="+encodeURIComponent(location.origin);' +
+    'return true;' +
+    '};' +
+
+    'var pronto=false,n=0;' +
+    'var t=setInterval(function(){' +
+    'if(!pronto)pronto=aplicar();' +
+    'if(pronto)ouvir();' +
+    'if(++n>80||(pronto&&window.__lja.pronto))clearInterval(t);' +
+    '},250);' +
+    '})();');
+end;
+
+procedure TfVideoOn.comando(const funcao, argumentos: string);
+begin
+  if (wvVideo = nil) or (not wvVideo.Initialized) or encerrando then
     Exit;
 
   wvVideo.ExecuteScript(
-    '(function(){' +
-    'var f=document.querySelector("iframe");' +
-    'if(!f)return;' +
-    'f.setAttribute("allow","autoplay; encrypted-media; picture-in-picture");' +
-    'f.src="https://www.youtube.com/embed/' + Trim(id) + '?' + PARAMS_YOUTUBE + '";' +
-    '})();');
+    'window.__ljaCmd&&window.__ljaCmd("' + funcao + '",[' + argumentos + ']);');
+end;
+
+procedure TfVideoOn.reproduz;
+begin
+  comando('playVideo', '');
+  //Não espera a confirmação: o painel precisa responder na hora, e o valor
+  //real chega no próximo ciclo de consultaEstado
+  estado := YT_REPRODUZIDO;
+end;
+
+procedure TfVideoOn.pausa;
+begin
+  comando('pauseVideo', '');
+  estado := YT_PAUSADO;
+end;
+
+procedure TfVideoOn.buscaSegundos(segundos: Double);
+var
+  txt: string;
+begin
+  if (segundos < 0) then
+    segundos := 0;
+
+  //Ponto decimal independe da configuração regional do Windows
+  txt := FormatFloat('0.###', segundos, TFormatSettings.Invariant);
+
+  //O segundo argumento manda buscar mesmo fora do trecho já baixado
+  comando('seekTo', txt + ',true');
+
+  {
+    Saltar no tempo faz o YouTube recarregar o módulo de legendas, e elas
+    voltam a aparecer mesmo em vídeo que começou sem elas.
+
+    Aqui vale setOption e não unloadModule: pelo canal de comandos o
+    unloadModule é ignorado - testado, a legenda continuava na tela -, e quem
+    de fato desliga é a opção de faixa vazia. O unloadModule só funciona
+    chamado direto no objeto do player, que é o que o script injetado faz
+    dentro do próprio frame do YouTube.
+  }
+  comando('setOption', '"captions","track",{}');
+
+  tempoAtual := segundos;
+end;
+
+//Pede o estado. A resposta chega em wvVideoExecuteScriptCompleted.
+procedure TfVideoOn.consultaEstado;
+begin
+  if (wvVideo = nil) or (not wvVideo.Initialized) or encerrando then
+    Exit;
+
+  wvVideo.ExecuteScript('JSON.stringify(window.__lja||null);', EXEC_ESTADO);
+end;
+
+{
+  Se o vídeo está em reprodução do ponto de vista de quem assiste.
+
+  O buffer conta como tocando. Todo salto no tempo passa por ele por um
+  instante, e tratá-lo como pausa fazia os botões do painel alternarem para
+  "pausado" e voltarem logo em seguida, a cada salto.
+}
+function TfVideoOn.tocando: Boolean;
+begin
+  Result := (estado = YT_REPRODUZIDO) or (estado = YT_BUFFER);
+end;
+
+function TfVideoOn.terminou: Boolean;
+begin
+  Result := (estado = YT_ENCERRADO);
+end;
+
+{
+  Retorno do ExecuteScript.
+
+  O resultado vem como JSON: uma string JSON contendo, por sua vez, o objeto
+  serializado. Por isso o texto é desempacotado duas vezes.
+}
+procedure TfVideoOn.wvVideoExecuteScriptCompleted(Sender: TObject;
+  aErrorCode: HRESULT; const aResultObjectAsJson: wvstring;
+  aExecutionID: integer);
+var
+  externo, interno: TJSONValue;
+  obj: TJSONObject;
+  txt: string;
+begin
+  if (aExecutionID <> EXEC_ESTADO) or (aErrorCode <> S_OK) then
+    Exit;
+
+  externo := nil;
+  interno := nil;
+  try
+    externo := TJSONObject.ParseJSONValue(string(aResultObjectAsJson));
+    if not (externo is TJSONString) then
+      Exit;
+
+    txt := TJSONString(externo).Value;
+    //Antes de a ponte ser instalada a resposta é nula, e não há o que ler
+    if (txt = '') or SameText(txt, 'null') then
+      Exit;
+
+    interno := TJSONObject.ParseJSONValue(txt);
+    if not (interno is TJSONObject) then
+      Exit;
+
+    //Campo que não vier mantém o último valor conhecido, em vez de zerar
+    obj := TJSONObject(interno);
+    obj.TryGetValue<Double>('tempo', tempoAtual);
+    obj.TryGetValue<Double>('duracao', duracao);
+    obj.TryGetValue<Integer>('estado', estado);
+  finally
+    interno.Free;
+    externo.Free;
+  end;
 end;
 
 //UpdateSize apenas reposiciona a janela filha. A área de renderização vem de
@@ -228,8 +464,9 @@ begin
   wvVideo.AreBrowserAcceleratorKeysEnabled := False;
   wvVideo.StatusBarEnabled := False;
 
-  //Precisa valer antes de navegar: aplica-se aos documentos seguintes
+  //Precisam valer antes de navegar: aplicam-se aos documentos seguintes
   desligaLegendasYoutube;
+  instalaScriptPlayer;
 
   if (Trim(url_pendente) <> '') then
     wvVideo.Navigate(url_pendente);
@@ -238,12 +475,24 @@ end;
 procedure TfVideoOn.wvVideoNavigationCompleted(Sender: TObject;
   const aWebView: ICoreWebView2;
   const aArgs: ICoreWebView2NavigationCompletedEventArgs);
+var
+  atual: string;
 begin
   //Ao fechar navegamos para about:blank; esse retorno não deve reexibir nada
   if encerrando then
     Exit;
 
-  aplicaParametrosYoutube;
+  atual := string(wvVideo.Source);
+
+  {
+    Reaproveitando a janela, o about:blank disparado pelo fechamento anterior
+    ainda está a caminho quando a nova navegação começa, e o retorno dele cai
+    aqui como se fosse a página do player. Preparar a página a partir daqui
+    fazia isso acontecer duas vezes; quem prepara agora é o script de
+    documento, em instalaScriptPlayer. Aqui só resta o que é de tela.
+  }
+  if (Pos(LowerCase(URL_PLAYER), LowerCase(atual)) <> 1) then
+    Exit;
 
   pnlLoading.Visible := False;
   ajustaTamanho;

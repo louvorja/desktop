@@ -2236,6 +2236,12 @@ type
 
     carrega_opc: Boolean;
 
+    //Quem o painel pnlPlayer está controlando: 'MCI' para arquivo local,
+    //'YOUTUBE' para vídeo online, vazio quando o painel está escondido.
+    //Sem isso os botões mandariam comando para o MediaPlayer1 mesmo com um
+    //vídeo do YouTube na tela.
+    origemPlayer: string;
+
     vSorteioAnimFim, vSorteioAnimFimNM: TDateTime;
     tCrono: TDateTime;
     tCronoOld: TDateTime;
@@ -3549,6 +3555,21 @@ begin
   end
   else fVideoOn.AlphaBlendValue := 255;
 
+  //O mesmo painel usado no player de arquivos passa a controlar o vídeo
+  //online. A barra só ganha escala quando o YouTube informar a duração.
+  origemPlayer := 'YOUTUBE';
+  pbPlayer.Value := 0;
+  pbPlayer.MaxValue := 1;
+  lblPlayer.Caption := 'Reproduzindo: ' + videoTITULO;
+  pnlPlayer.Visible := True;
+  btplPlay.Down := True;
+  btplPause.Down := False;
+
+  //O intervalo do timer é 1 ms, pensado para ler a posição do MCI, que é
+  //barata. Aqui cada ciclo faz uma chamada de script no navegador, então
+  //quatro por segundo bastam para a barra andar sem sobrecarregar nada.
+  DM.tmrPlayer.Interval := 250;
+  DM.tmrPlayer.Enabled := True;
 end;
 
 procedure TfmIndex.abrirArquivo(url: string;externo: Boolean);
@@ -8636,6 +8657,22 @@ var
 begin
   DM.tmrPlayer.Enabled := false;
   newPosition := Round(x * pbPlayer.MaxValue / pbPlayer.ClientWidth);
+
+  if (origemPlayer = 'YOUTUBE') then
+  begin
+    //A barra trabalha em milissegundos nos dois casos; o YouTube recebe
+    //segundos
+    if (fVideoOn <> nil) then
+    begin
+      fVideoOn.buscaSegundos(newPosition / 1000);
+      if btplPlay.Down then
+        fVideoOn.reproduz;
+    end;
+    pbPlayer.Value := newPosition;
+    DM.tmrPlayer.Enabled := True;
+    Exit;
+  end;
+
 //  MediaPlayer1.Pause;
   MediaPlayer1.Position := newPosition;
   DM.tmrPlayer.Enabled := True;
@@ -8685,6 +8722,7 @@ begin
   end;
 
   try
+    origemPlayer := 'MCI';
     pbPlayer.Value := 0;
     lblPlayer.Caption := 'Reproduzindo: '+ExtractFileName(url);
     pnlPlayer.Visible := True;
@@ -8698,6 +8736,9 @@ begin
     btplPlay.Down := True;
     btplPause.Down := False;
     pbPlayer.MaxValue := MediaPlayer1.Length;
+    //Devolve o intervalo original: o vídeo online o aumenta enquanto usa o
+    //mesmo timer
+    DM.tmrPlayer.Interval := 1;
     DM.tmrPlayer.Enabled := True;
   except
     on E: Exception do
@@ -9000,7 +9041,26 @@ begin
 end;
 
 procedure TfmIndex.btplFecharClick(Sender: TObject);
+var
+  eraYoutube: Boolean;
 begin
+  eraYoutube := (origemPlayer = 'YOUTUBE');
+  origemPlayer := '';
+
+  pnlPlayer.Visible := False;
+  lblPlayer.Caption := '';
+  DM.tmrPlayer.Enabled := False;
+  pbPlayer.Value := 0;
+
+  if eraYoutube then
+  begin
+    //A janela do vídeo online tem o próprio encerramento, que interrompe a
+    //reprodução; o MediaPlayer1 não está envolvido
+    if (fVideoOn <> nil) and (fVideoOn.Visible) then
+      fVideoOn.Close;
+    Exit;
+  end;
+
   try
     MediaPlayer1.Stop;
   except
@@ -9008,10 +9068,6 @@ begin
   end;
   MediaPlayer1.Close;
   MediaPlayer1.FileName := '';
-  pnlPlayer.Visible := False;
-  lblPlayer.Caption := '';
-  DM.tmrPlayer.Enabled := False;
-  pbPlayer.Value := 0;
 
   if (fPlayer <> nil) and (fPlayer.Visible) then
     fPlayer.Close;
@@ -9025,7 +9081,14 @@ begin
     Exit;
   end;
 
-  MediaPlayer1.Pause;
+  if (origemPlayer = 'YOUTUBE') then
+  begin
+    if (fVideoOn <> nil) then
+      fVideoOn.pausa;
+  end
+  else
+    MediaPlayer1.Pause;
+
   btplPlay.Down := false;
 end;
 
@@ -9037,7 +9100,14 @@ begin
     Exit;
   end;
 
-  MediaPlayer1.Play;
+  if (origemPlayer = 'YOUTUBE') then
+  begin
+    if (fVideoOn <> nil) then
+      fVideoOn.reproduz;
+  end
+  else
+    MediaPlayer1.Play;
+
   btplPause.Down := false;
 end;
 
