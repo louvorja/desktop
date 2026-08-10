@@ -823,7 +823,12 @@ begin
     // Usage: GET /api/search-songs?q=termo
     if arq = '/api/search-songs' then
     begin
-        searchTerm := Trim(ARequestInfo.Params.Values['q']);
+        // O Indy decodifica a query string com o charset do Content-Type, e
+        // num GET não existe Content-Type: o charset fica vazio e ele usa o
+        // padrão de 8 bits. Como o navegador percent-encoda em UTF-8, buscar
+        // "coração" não encontrava nada, enquanto "coracao" encontrava. v2Param
+        // faz a decodificação correta.
+        searchTerm := Trim(v2Param(ARequestInfo, 'q'));
 
         if searchTerm = '' then
         begin
