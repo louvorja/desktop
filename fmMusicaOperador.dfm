@@ -56,7 +56,7 @@ object fMusicaOperador: TfMusicaOperador
       DrawGraphicFields = False
       UseColumnsFont = False
       DefaultRowHeight = 60
-      MouseWheelSupport = False
+      MouseWheelSupport = True
       SaveMultiSelection = False
       PickListBoxSkinDataName = 'listbox'
       PickListBoxCaptionMode = False

@@ -13086,7 +13086,7 @@ object fmIndex: TfmIndex
     TabHeight = 22
     TabOrder = 4
     Visible = False
-    MouseWheelSupport = True
+    MouseWheelSupport = False
     TabExtededDraw = False
     ButtonTabSkinDataName = 'resizetoolbutton'
     TabsOffset = 0
@@ -22603,7 +22603,7 @@ object fmIndex: TfmIndex
           Align = alClient
           Alignment = taCenter
           AutoSize = False
-          Caption = '0000'
+          Caption = '----'
           Color = clBtnFace
           Font.Charset = ANSI_CHARSET
           Font.Color = clBlack
@@ -22615,6 +22615,7 @@ object fmIndex: TfmIndex
           ParentShowHint = False
           ShowHint = False
           Layout = tlCenter
+          WordWrap = True
           ExplicitTop = 1
           ExplicitWidth = 491
           ExplicitHeight = 378
@@ -29411,7 +29412,7 @@ object fmIndex: TfmIndex
                   DrawGraphicFields = False
                   UseColumnsFont = False
                   DefaultRowHeight = 20
-                  MouseWheelSupport = False
+                  MouseWheelSupport = True
                   SaveMultiSelection = False
                   PickListBoxSkinDataName = 'listbox'
                   PickListBoxCaptionMode = False
@@ -29495,7 +29496,7 @@ object fmIndex: TfmIndex
                   DrawGraphicFields = False
                   UseColumnsFont = False
                   DefaultRowHeight = 20
-                  MouseWheelSupport = False
+                  MouseWheelSupport = True
                   SaveMultiSelection = False
                   PickListBoxSkinDataName = 'listbox'
                   PickListBoxCaptionMode = False
@@ -30033,7 +30034,7 @@ object fmIndex: TfmIndex
               ParentFont = False
               Style = tsFlatButtons
               TabOrder = 0
-              MouseWheelSupport = True
+              MouseWheelSupport = False
               TabExtededDraw = False
               ButtonTabSkinDataName = 'resizetoolbutton'
               TabsOffset = 0
@@ -31250,7 +31251,7 @@ object fmIndex: TfmIndex
                   PageSize = 1
                   Min = 1
                   Max = 0
-                  Position = 0
+                  Position = 1
                   SmallChange = 1
                   LargeChange = 1
                 end
@@ -31578,7 +31579,7 @@ object fmIndex: TfmIndex
                   PageSize = 1
                   Min = 1
                   Max = 0
-                  Position = 1
+                  Position = 0
                   SmallChange = 1
                   LargeChange = 1
                 end
@@ -32395,7 +32396,7 @@ object fmIndex: TfmIndex
                   DrawGraphicFields = False
                   UseColumnsFont = False
                   DefaultRowHeight = 17
-                  MouseWheelSupport = False
+                  MouseWheelSupport = True
                   SaveMultiSelection = False
                   PickListBoxSkinDataName = 'listbox'
                   PickListBoxCaptionMode = False
@@ -48701,7 +48702,7 @@ object fmIndex: TfmIndex
         PageSize = 1
         Min = 1
         Max = 0
-        Position = 0
+        Position = 1
         SmallChange = 1
         LargeChange = 1
       end
@@ -52112,7 +52113,7 @@ object fmIndex: TfmIndex
             Width = 225
             Height = 374
             Align = alClient
-            Date = 43344.475675266210000000
+            Date = 43344.474854490740000000
             DoubleBuffered = False
             ParentDoubleBuffered = False
             TabOrder = 0

@@ -2175,10 +2175,13 @@ type
     move_panel: TPanel;
     move: Boolean;
     FLogChamadas: Integer;  // contador para checagem de truncamento do louvorja.log
+    arquivo_recebido: string;  // caminho enviado por outra instância (WM_COPYDATA)
 
     const
       VERSAO_MIN_BD: integer = 140;
       fonte: string = 'Arial Rounded MT Bold';
+      //Pixels por "linha" ao rolar um TbsSkinScrollBox com a roda do mouse
+      ALTURA_LINHA_ROLAGEM: integer = 24;
 
     //Permite arrastar form via Panel
     procedure WMNCHitTest(var Msg: TWMNCHitTest); message WM_NCHITTEST;
@@ -2189,10 +2192,34 @@ type
     //Aceita arquivos arrastados do Windows Explorer (drop na aba Liturgia)
     procedure WMDropFiles(var Msg: TWMDropFiles); message WM_DROPFILES;
 
+
+    //Atende o pedido de outra instância para trazer esta janela para frente
+    procedure WndProc(var Message: TMessage); override;
+
     //Define as ações para quando perder ou receber o foco
     procedure ApplicationDeactivate(Sender: TObject);
     procedure ApplicationActivate(Sender: TObject);
+
+    //Entrega a roda do mouse ao controle sob o cursor, não ao que tem foco.
+    //True quando a rolagem foi resolvida e a mensagem não deve seguir adiante.
+    function TrataRodaMouse(const Msg: TMsg): Boolean;
+    procedure InstalaGanchoRoda;
+    procedure RemoveGanchoRoda;
     procedure ForceDirectoriesRecursive(const Path: string);
+
+    //As listas de livros e capítulos são desenhadas em colunas. Quando o total
+    //de itens não fecha a última coluna, o fim da rolagem embaralha a ordem
+    //visual. Completa a consulta com registros vazios até fechar a coluna.
+    procedure completaColunasGrade(q: TFDQuery; grade: TbsSkinDBCtrlGrid;
+      const campoChave: string);
+    //True quando o registro atual é um desses registros de preenchimento,
+    //que não corresponde a item nenhum
+    function registroEmBranco(q: TFDQuery; const campoChave: string): Boolean;
+
+    procedure completaColunasCapitulos;
+    function capituloEmBranco: Boolean;
+    procedure completaColunasLivros;
+    function livroEmBranco: Boolean;
 
     //Helpers internos para acesso ao liturgia.ja (UTF-8 garantido + migração on-demand)
     function caminhoLiturgia: string;
@@ -2244,7 +2271,7 @@ uses
   fmMonitorPainelDinamico, fmMonitorCronometro,
   fmMonitorSorteio, fmMonitorCronometroCulto, fmMonitorBibliaBusca,
   fmMonitorBiblia, fmMonitorMenuMusicas, fmIdentificaMonitores,
-  fmCopiaLiturgiaDia;
+  fmCopiaLiturgiaDia, uInstanciaUnica;
 
 {$R *.dfm}
 
@@ -2296,6 +2323,7 @@ procedure TfmIndex.FormCreate(Sender: TObject);
 begin
   Application.OnDeactivate := ApplicationDeactivate;
   Application.OnActivate := ApplicationActivate;
+  InstalaGanchoRoda;
   SysUtils.FormatSettings.DecimalSeparator := '.';
 
   SetWindowLong(fmIndex.Handle,
@@ -2309,6 +2337,7 @@ end;
 
 procedure TfmIndex.FormDestroy(Sender: TObject);
 begin
+  RemoveGanchoRoda;
   DragAcceptFiles(Self.Handle, False);
   RichEdit1Exit(Sender);
   usaFontes(false);
@@ -2742,6 +2771,77 @@ procedure TfmIndex.ForceDirectoriesRecursive(const Path: string);
 begin
   if not TDirectory.Exists(Path) then
     ForceDirectories(Path);
+end;
+
+function TfmIndex.registroEmBranco(q: TFDQuery; const campoChave: string): Boolean;
+begin
+  Result := q.Active and q.FieldByName(campoChave).IsNull;
+end;
+
+procedure TfmIndex.completaColunasGrade(q: TFDQuery; grade: TbsSkinDBCtrlGrid;
+  const campoChave: string);
+var
+  colunas, faltam, i: integer;
+begin
+  if not q.Active then
+    Exit;
+
+  //Sem CachedUpdates os registros de preenchimento iriam parar no banco
+  q.CachedUpdates := True;
+  //Os campos herdam o NOT NULL das colunas e recusariam o registro vazio no Post
+  for i := 0 to q.FieldCount - 1 do
+    q.Fields[i].Required := False;
+
+  q.DisableControls;
+  try
+    //Limpa o preenchimento anterior: a rotina roda de novo quando a grade
+    //já foi preenchida com outro número de colunas
+    q.First;
+    while not q.Eof do
+      if q.FieldByName(campoChave).IsNull then
+        q.Delete
+      else
+        q.Next;
+
+    //RecordCount só conta o que já foi buscado do banco; sem isso a conta
+    //sai errada quando o resultado é maior que o tamanho do lote
+    q.FetchAll;
+
+    colunas := grade.ColCount;
+    if (colunas < 2) then
+      Exit;
+
+    faltam := (colunas - (q.RecordCount mod colunas)) mod colunas;
+    for i := 1 to faltam do
+    begin
+      q.Append;
+      q.FieldByName(campoChave).Clear;
+      q.Post;
+    end;
+  finally
+    q.First;
+    q.EnableControls;
+  end;
+end;
+
+function TfmIndex.capituloEmBranco: Boolean;
+begin
+  Result := registroEmBranco(DM.qrBIBLIA_CAPITULOS, 'CAPITULO');
+end;
+
+procedure TfmIndex.completaColunasCapitulos;
+begin
+  completaColunasGrade(DM.qrBIBLIA_CAPITULOS, DBCtrlGridBibliaCapitulo, 'CAPITULO');
+end;
+
+function TfmIndex.livroEmBranco: Boolean;
+begin
+  Result := registroEmBranco(DM.qrBIBLIA_LIVROS, 'ID');
+end;
+
+procedure TfmIndex.completaColunasLivros;
+begin
+  completaColunasGrade(DM.qrBIBLIA_LIVROS, DBCtrlGridBibliaLivro, 'ID');
 end;
 
 procedure TfmIndex.FormActivate(Sender: TObject);
@@ -3247,7 +3347,7 @@ end;
 
 procedure TfmIndex.abreLetraMusicaAlbum(albumID: Integer;musicaID: Integer);
 var
-  monitor: integer;
+  monitor, monitor_ret: integer;
   i: integer;
 begin
   monitor := strtoint(lerParam('Musicas', 'Monitor', '2'));
@@ -3256,6 +3356,12 @@ begin
   else
     monitor := monitor - 1;
 
+  monitor_ret := strtoint(lerParam('Musicas', 'MonitorRetorno', '3'));
+  if (Screen.MonitorCount < monitor_ret) then
+    monitor_ret := 0
+  else
+    monitor_ret := monitor_ret - 1;
+
   if fMusica <> nil then
     fMusica.Close;
 
@@ -3263,7 +3369,23 @@ begin
   if fMusicaOperador <> nil then
     fMusicaOperador.Close;
 
+  if fMusicaRetorno <> nil then
+    fMusicaRetorno.Close;
+
   fIniciando.AppCreateForm(TfMusicaOperador, fMusicaOperador);
+
+  {
+    O fMusicaRetorno precisa existir mesmo quando o modo retorno está
+    desligado: o fmMusica o acessa em dezenas de pontos protegido apenas pela
+    configuração ModoRetorno, e não por verificação de nulo.
+
+    Esta rotina não o criava. Quem usasse "Reproduzir Todas" sem ter aberto
+    uma música antes recebia violação de acesso, porque o formulário era nil.
+    Abrir uma música primeiro mascarava o problema: o caminho normal o cria, e
+    formulários aqui só são escondidos, nunca liberados - então o ponteiro
+    continuava válido depois.
+  }
+  fIniciando.AppCreateForm(TfMusicaRetorno, fMusicaRetorno);
 
   if (lerParam('Musicas', 'ModoOperador', '1') = '1') then
   begin
@@ -3275,6 +3397,22 @@ begin
     fMusicaOperador.pnlProgress.Visible := true;
     fMusicaOperador.btPausePlay.Visible := true;
     fMusicaOperador.Show;
+  end;
+
+  //Mesmo tratamento do caminho normal (abreLetraMusica)
+  if (lerParam('Musicas', 'ModoRetorno', '1') = '1') then
+  begin
+    fMusicaRetorno.lblTempo.Caption := '';
+    fMusicaRetorno.gSlide.Value := 0;
+    fMusicaRetorno.gSlideTotal.Value := 0;
+    fMusicaRetorno.lblSlides.Caption := '';
+    fMusicaRetorno.pnlProgress.Visible := true;
+    fMusicaRetorno.Show;
+
+    fMusicaRetorno.Left := monitorInfo(monitor_ret).Left;
+    fMusicaRetorno.Top := monitorInfo(monitor_ret).Top;
+    fMusicaRetorno.Width := monitorInfo(monitor_ret).Width;
+    fMusicaRetorno.Height := monitorInfo(monitor_ret).Height;
   end;
 
   fIniciando.AppCreateForm(TfMusica, fMusica);
@@ -3375,10 +3513,14 @@ begin
   else
     monitor := monitor - 1;
 
-  if fVideoOn <> nil then
+  //Reaproveita a janela em vez de criar outra: a anterior só era escondida,
+  //nunca liberada, e cada uma mantém um navegador WebView2 com processo
+  //próprio (~75 MB por vídeo aberto, medido)
+  if fVideoOn = nil then
+    fIniciando.AppCreateForm(TfVideoOn, fVideoOn)
+  else
     fVideoOn.Close;
 
-  fIniciando.AppCreateForm(TfVideoOn, fVideoOn);
   fVideoOn.videoID := videoID;
   fVideoOn.Caption := videoTITULO;
 
@@ -3711,6 +3853,265 @@ end;
 procedure TfmIndex.ApplicationDeactivate(Sender: TObject);
 begin
   focoAplicacao(false);
+end;
+
+{
+  Componentes que tratam a roda por conta própria: basta entregar a mensagem.
+
+  Atenção: a biblioteca de skin NÃO deriva dos controles do VCL - ela os
+  reimplementa a partir de classes próprias. Por isso as duas listas: as
+  classes-base do VCL não cobrem os equivalentes com skin.
+}
+function RolaSozinho(c: TControl): Boolean;
+begin
+  Result := //controles do VCL
+            (c is TCustomListBox) or (c is TCustomMemo) or (c is TCustomGrid) or
+            (c is TCustomTreeView) or (c is TCustomListView) or
+            (c is TCustomComboBox) or (c is TCustomRichEdit) or
+            //equivalentes com skin, que não descendem dos acima
+            (c is TbsSkinOfficeListBox);
+end;
+
+//Row, TopRow e VisibleRowCount são protegidos no grid com skin. Esta classe de
+//acesso, declarada aqui, permite lê-los sem alterar a biblioteca.
+type
+  TAcessoGrade = class(TbsSkinCustomGrid);
+
+{
+  O VCL entrega a roda do mouse ao controle que está com FOCO, não ao que está
+  sob o cursor. Era a origem de rolar as guias em vez do conteúdo, e de não
+  rolar nada quando o foco estava em outro lugar.
+
+  Aqui a mensagem é resolvida antes de o VCL distribuí-la, olhando quem está
+  sob o cursor. A cadeia de pais é percorrida até encontrar quem deve rolar:
+
+  - TbsSkinScrollBox e TDBCtrlGrid não tratam a roda, então são rolados aqui;
+  - os demais recebem a mensagem e rolam com a lógica nativa deles.
+
+  Janelas que não são do VCL (o navegador do player, por exemplo) são deixadas
+  em paz: elas já recebem a roda do próprio Windows.
+}
+{
+  A roda é interceptada por um gancho de mensagens da thread, e não pelo
+  Application.OnMessage. Motivo: o TbsRibbon substitui o OnMessage quando o
+  menu do aplicativo aparece e o substituto dele não repassa para o tratador
+  anterior - só trata a tecla ESC e descarta o resto. Com o menu aberto
+  (Opções, Sobre, Desenvolvedor) o nosso tratamento simplesmente não era
+  chamado. Um gancho de thread não pode ser deslocado assim.
+}
+var
+  GanchoRoda: HHOOK = 0;
+
+function ProcGanchoRoda(Code: Integer; wParam: WPARAM; lParam: LPARAM): LRESULT; stdcall;
+var
+  msg: PMsg;
+begin
+  if (Code = HC_ACTION) and (wParam = PM_REMOVE) and (fmIndex <> nil) then
+  begin
+    msg := PMsg(lParam);
+    if (msg^.message = WM_MOUSEWHEEL) and fmIndex.TrataRodaMouse(msg^) then
+      //Já rolamos: neutraliza a mensagem para ninguém mais reagir a ela
+      msg^.message := WM_NULL;
+  end;
+
+  Result := CallNextHookEx(GanchoRoda, Code, wParam, lParam);
+end;
+
+procedure TfmIndex.InstalaGanchoRoda;
+begin
+  if (GanchoRoda = 0) then
+    GanchoRoda := SetWindowsHookEx(WH_GETMESSAGE, @ProcGanchoRoda, 0,
+                                   GetCurrentThreadId);
+end;
+
+procedure TfmIndex.RemoveGanchoRoda;
+begin
+  if (GanchoRoda <> 0) then
+  begin
+    UnhookWindowsHookEx(GanchoRoda);
+    GanchoRoda := 0;
+  end;
+end;
+
+function TfmIndex.TrataRodaMouse(const Msg: TMsg): Boolean;
+var
+  janela: HWND;
+  ctl: TControl;
+  fonte: TDataSource;
+  colunas, visiveis, indice: Integer;
+  passo, desloc: Integer;
+  delta: SmallInt;
+begin
+  Result := False;
+
+  if (Msg.message <> WM_MOUSEWHEEL) then
+    Exit;
+
+  janela := WindowFromPoint(Msg.pt);
+  if (janela = 0) then
+    Exit;
+
+  ctl := FindControl(janela);
+  if (ctl = nil) then
+    Exit;
+
+  delta := SmallInt(HiWord(Msg.wParam));
+  if (delta = 0) then
+    Exit;
+
+  //Passo conforme a configuração do Windows, e não um valor fixo: o valor
+  //antigo (10 pixels) era o motivo de rolar tão devagar
+  if not SystemParametersInfo(SPI_GETWHEELSCROLLLINES, 0, @passo, 0) then
+    passo := 3;
+  if (passo <= 0) then
+    passo := 3;
+
+  //Deslocamento em pixels, já com o sinal: roda para cima sobe o conteúdo
+  if (delta > 0) then
+    desloc := -passo * ALTURA_LINHA_ROLAGEM
+  else
+    desloc := passo * ALTURA_LINHA_ROLAGEM;
+
+  while (ctl <> nil) do
+  begin
+    //Quem sabe rolar sozinho tem preferência sobre o contêiner que o abriga
+    if RolaSozinho(ctl) then
+      Break;
+
+    //Nenhum destes três contêineres trata a roda por conta própria: o
+    //TbsSkinScrollPanel até tem tratamento, mas só age quando está com foco
+    if (ctl is TbsSkinScrollBox) then
+    begin
+      with TbsSkinScrollBox(ctl).VScrollBar do
+        Position := Position + desloc;
+      Result := True;
+      Exit;
+    end;
+
+    if (ctl is TbsSkinScrollPanel) then
+    begin
+      with TbsSkinScrollPanel(ctl) do
+        Position := Position + desloc;
+      Result := True;
+      Exit;
+    end;
+
+    //Páginas do menu do aplicativo (Opções, Sobre, Desenvolvedor): rolam pela
+    //mesma propriedade Position, e também não tratam a roda por conta própria
+    if (ctl is TbsAppMenuCustomPage) then
+    begin
+      with TbsAppMenuCustomPage(ctl) do
+        Position := Position + desloc;
+      Result := True;
+      Exit;
+    end;
+
+    if (ctl is TScrollBox) then
+    begin
+      with TScrollBox(ctl).VertScrollBar do
+        Position := Position + desloc;
+      Result := True;
+      Exit;
+    end;
+
+    //Grades de registros rolam andando no dataset. O TbsSkinDBCtrlGrid não
+    //descende do TDBCtrlGrid e não trata a roda - é o que a Bíblia inteira usa
+    {
+      Grids de linhas (editor de slides, tela do apresentador). O tratamento
+      nativo deles anda um registro por clique, então era preciso percorrer
+      todas as linhas da tela antes de a página rolar. Aqui vale a mesma
+      correção das grades de cartões: o deslocamento parte da posição da linha
+      atual dentro das visíveis.
+    }
+    if (ctl is TbsSkinCustomDBGrid) then
+    begin
+      fonte := TbsSkinCustomDBGrid(ctl).DataSource;
+      if Assigned(fonte) and Assigned(fonte.DataSet) and fonte.DataSet.Active then
+      begin
+        visiveis := TAcessoGrade(ctl).VisibleRowCount;
+        //Posição da linha atual dentro da parte visível
+        indice := TAcessoGrade(ctl).Row - TAcessoGrade(ctl).TopRow;
+
+        if (visiveis < 1) then
+          visiveis := 1;
+        if (indice < 0) then
+          indice := 0;
+
+        if (delta > 0) then
+          fonte.DataSet.MoveBy(-(indice + passo))
+        else
+          fonte.DataSet.MoveBy((visiveis - 1 - indice) + passo);
+        Result := True;
+      end;
+      Exit;
+    end;
+
+    fonte := nil;
+    colunas := 1;
+    visiveis := 1;
+    indice := 0;
+    if (ctl is TDBCtrlGrid) then
+    begin
+      fonte := TDBCtrlGrid(ctl).DataSource;
+      colunas := TDBCtrlGrid(ctl).ColCount;
+      visiveis := TDBCtrlGrid(ctl).PanelCount;
+      indice := TDBCtrlGrid(ctl).PanelIndex;
+    end
+    else if (ctl is TbsSkinDBCtrlGrid) then
+    begin
+      fonte := TbsSkinDBCtrlGrid(ctl).DataSource;
+      colunas := TbsSkinDBCtrlGrid(ctl).ColCount;
+      visiveis := TbsSkinDBCtrlGrid(ctl).PanelCount;
+      indice := TbsSkinDBCtrlGrid(ctl).PanelIndex;
+    end;
+
+    if (fonte <> nil) then
+    begin
+      if Assigned(fonte.DataSet) and fonte.DataSet.Active then
+      begin
+        {
+          Anda uma LINHA inteira por clique, e não um registro solto.
+
+          Estas grades distribuem os registros em colunas (a de capítulos
+          calcula quantas cabem pela largura da tela). Andar de um em um faria
+          cada item mudar de coluna a cada clique, e exigiria um clique por
+          item para descer a tela - eram 104 cliques na tela de capítulos.
+          Sendo o passo igual ao número de colunas, cada item fica na mesma
+          coluna. Nas listas de uma coluna só, isso dá um item por clique.
+
+          O deslocamento é calculado a partir da posição do cursor dentro dos
+          painéis visíveis. Sem isso, a grade rola só o necessário para manter
+          o cursor à vista, e o primeiro clique a partir do topo andava
+          diferente dos demais.
+        }
+        if (colunas < 1) then
+          colunas := 1;
+        if (visiveis < 1) then
+          visiveis := 1;
+        if (indice < 0) then
+          indice := 0;
+
+        if (delta > 0) then
+          //Sobe: leva o cursor para antes do primeiro painel visível
+          fonte.DataSet.MoveBy(-(indice + colunas))
+        else
+          //Desce: leva o cursor para depois do último painel visível
+          fonte.DataSet.MoveBy((visiveis - 1 - indice) + colunas);
+        Result := True;
+      end;
+      Exit;
+    end;
+
+    ctl := ctl.Parent;
+  end;
+
+  //Controle que rola sozinho: entrega direto a ele, sem passar pelo foco.
+  //SendMessage não volta pela fila, então não reentra aqui.
+  if (janela <> Msg.hwnd) then
+  begin
+    SendMessage(janela, WM_MOUSEWHEEL, Msg.wParam, Msg.lParam);
+    Result := True;
+  end;
 end;
 
 function TfmIndex.arquivoCodificado(arq: string): TStringList;
@@ -4333,10 +4734,52 @@ begin
     Params := Params + ' "' + ParamStr(I) + '"';
   end;
 
+  //Solta o mutex antes de relançar, senão a nova cópia se recusa a abrir
+  LiberaInstanciaUnica;
+
   ShellExecute(0, 'open', PChar(ExeName), PChar(Params), nil, SW_SHOWNORMAL);
 
   DM.tmrSair.enabled := true;
   Halt;
+end;
+
+procedure TfmIndex.WndProc(var Message: TMessage);
+var
+  dados: PCopyDataStruct;
+begin
+  if (WM_LOUVORJA_RESTAURA <> 0)
+    and (Message.Msg = WM_LOUVORJA_RESTAURA)
+    and (Cardinal(Message.WParam) = IdInstanciaUnica) then
+    TrazJanelaParaFrente(Self);
+
+  //Arquivo aberto pelo Windows enquanto o programa já estava rodando: a outra
+  //instância entrega o caminho aqui em vez de tentar abrir uma segunda cópia
+  if (Message.Msg = WM_COPYDATA) then
+  begin
+    dados := PCopyDataStruct(Message.LParam);
+    if (dados <> nil) and (Cardinal(dados^.dwData) = IdInstanciaUnica) then
+    begin
+      arquivo_recebido := PChar(dados^.lpData);
+      Message.Result := 1;
+
+      //Abrir aqui dentro travaria a instância que enviou até o arquivo
+      //terminar de abrir; a mensagem postada trata isso depois
+      PostMessage(Handle, WM_LOUVORJA_ABRE_ARQUIVO, 0, 0);
+      Exit;
+    end;
+  end;
+
+  if (WM_LOUVORJA_ABRE_ARQUIVO <> 0)
+    and (Message.Msg = WM_LOUVORJA_ABRE_ARQUIVO)
+    and (Trim(arquivo_recebido) <> '') then
+  begin
+    //Mesmo caminho usado pelos itens da liturgia
+    abrirArquivo(arquivo_recebido);
+    arquivo_recebido := '';
+    Exit;
+  end;
+
+  inherited WndProc(Message);
 end;
 
 procedure TfmIndex.RE_SetSelBgColor(RichEdit: TbsSkinRichEdit; AColor: TColor);
@@ -4948,6 +5391,7 @@ begin
   begin
     DM.qrBIBLIA_LIVROS.Close;
     DM.qrBIBLIA_LIVROS.Open;
+    completaColunasLivros;
     DM.qrBIBLIA_LIVROS.Locate('ID',loadCol.Strings.Values['BIBLIA_LIVRO'],[]);
     busBibliaLivro.ItemIndex := StrToInt(loadCol.Strings.Values['BIBLIA_LIVRO'])-1;
   end
@@ -4957,6 +5401,7 @@ begin
     DM.qrBIBLIA_CAPITULOS.ParamByName('LIVRO').Value := StrToInt('0'+loadCol.Strings.Values['BIBLIA_LIVRO']);
     DM.qrBIBLIA_CAPITULOS.ParamByName('VERSAO').Value := loadCol.Strings.Values['BIBLIA_VERSAO'];
     DM.qrBIBLIA_CAPITULOS.Open;
+    completaColunasCapitulos;
     busBibliaCapitulo.Items.Clear;
     for i := 1 to DM.qrBIBLIA_LIVROS.FieldByName('CAPITULOS').AsInteger do
     begin
@@ -5807,6 +6252,9 @@ begin
       end;
     end;
 
+    //Solta o mutex antes de relançar, senão a nova cópia se recusa a abrir
+    LiberaInstanciaUnica;
+
     ShellExecute(handle, nil, PChar(Application.ExeName), nil, nil, SW_SHOWNORMAL);
     DM.tmrSair.enabled := true;
     Application.Terminate;
@@ -5885,6 +6333,9 @@ begin
         Exit;
       end;
     end;
+
+    //Solta o mutex antes de relançar, senão a nova cópia se recusa a abrir
+    LiberaInstanciaUnica;
 
     ShellExecute(handle, nil, PChar(Application.ExeName), nil, nil, SW_SHOWNORMAL);
     DM.tmrSair.enabled := true;
@@ -5970,9 +6421,8 @@ end;
 
 procedure TfmIndex.txtDecrChange(Sender: TObject);
 begin
-  //carregaConfiguracoes atribui txtDecr.Text ao abrir a página, e isso cai
-  //aqui como se o operador tivesse digitado: zerava um cronômetro que já
-  //estivesse rodando
+  //Durante a carga das configurações o texto é reescrito com o mesmo valor;
+  //zerar aqui interromperia um cronômetro em andamento
   if carrega_opc then Exit;
 
   btZerarCronoClick(Sender);
@@ -8241,7 +8691,9 @@ begin
     MediaPlayer1.Display := fPlayer.Panel1;
     MediaPlayer1.FileName := url;
     MediaPlayer1.Open;
-    MediaPlayer1.DisplayRect := fPlayer.Panel1.ClientRect;
+    //Só depois do Open o MCI sabe informar as dimensões do vídeo
+    if (fPlayer <> nil) then
+      fPlayer.ajustaProporcao;
     MediaPlayer1.Play;
     btplPlay.Down := True;
     btplPause.Down := False;
@@ -8395,7 +8847,9 @@ var
   hora: string;
 begin
 //  pnlCrono.DoubleBuffered := False;
-  if (Sender <> nil) and (not TbsSkinSpeedButton(Sender).Enabled) then Exit;
+  //Enabled é lido por método virtual: com Sender que não seja TControl (um TTimer,
+  //por exemplo) o cast direto desvia para fora da VMT e gera access violation
+  if (Sender is TControl) and (not TControl(Sender).Enabled) then Exit;
   DM.tmrCrono.Enabled := false;
   btIniciarCrono.Caption := 'Iniciar';
   btIniciarCrono.ImageIndex := 20;
@@ -10003,11 +10457,11 @@ begin
   if txtDecr.Enabled and txtDecr.CanFocus then
     txtDecr.Setfocus;
 
-  //Durante o carregamento das opções nada aqui é escolha do operador, e
-  //zerar apagaria um cronômetro em andamento
-  if carrega_opc then Exit;
+  //Só zera quando a direção foi trocada pelo usuário, não durante a carga das
+  //configurações (que reaplica o mesmo valor a cada redimensionamento da janela)
+  if not carrega_opc then
+    btZerarCronoClick(Sender);
 
-  btZerarCronoClick(Sender);
   gravaParam('Cronometro', 'Direcao', IntToStr(rbDirecao.ItemIndex));
 end;
 
@@ -10296,9 +10750,15 @@ begin
       if (DM.qrBIBLIA_LIVROS.Bof) then
       begin
         DM.qrBIBLIA_LIVROS.Last;
+        //O fim da consulta pode ser preenchimento de coluna: volta até um livro
+        while livroEmBranco and not DM.qrBIBLIA_LIVROS.Bof do
+          DM.qrBIBLIA_LIVROS.Prior;
       end;
       DBCtrlGridBibliaLivroClick(Sender);
       DM.qrBIBLIA_CAPITULOS.Last;
+      //O fim da consulta pode ser preenchimento de coluna: volta até um capítulo
+      while capituloEmBranco and not DM.qrBIBLIA_CAPITULOS.Bof do
+        DM.qrBIBLIA_CAPITULOS.Prior;
     end;
     DBCtrlGridBibliaCapituloClick(Sender);
     DM.qrBIBLIA_VERSICULOS.Last;
@@ -10337,11 +10797,13 @@ begin
   begin
     DM.qrBIBLIA_CAPITULOS.Locate('CAPITULO',loadCol.Strings.Values['BIBLIA_P_CAPITULO'],[]);
     DM.qrBIBLIA_CAPITULOS.Next;
-    if (DM.qrBIBLIA_CAPITULOS.Eof) then
+    //Preenchimento de coluna depois do último capítulo vale como fim da lista
+    if (DM.qrBIBLIA_CAPITULOS.Eof) or capituloEmBranco then
     begin
       DM.qrBIBLIA_LIVROS.Locate('ID',loadCol.Strings.Values['BIBLIA_P_LIVRO'],[]);
       DM.qrBIBLIA_LIVROS.Next;
-      if (DM.qrBIBLIA_LIVROS.Eof) then
+      //Preenchimento de coluna depois do último livro vale como fim da lista
+      if (DM.qrBIBLIA_LIVROS.Eof) or livroEmBranco then
       begin
         DM.qrBIBLIA_LIVROS.First;
       end;
@@ -12357,9 +12819,13 @@ begin
 
     DBCtrlGridBibliaLivro.RowCount := Trunc(DBCtrlGridBibliaLivro.ClientHeight / 75);
     DBCtrlGridBibliaLivro.ColCount := Trunc(DBCtrlGridBibliaLivro.ClientWidth / 75);
+    //A consulta pode ter sido aberta antes da grade saber quantas colunas tem
+    completaColunasLivros;
 
     DBCtrlGridBibliaCapitulo.RowCount := Trunc(DBCtrlGridBibliaCapitulo.ClientHeight / 40);
     DBCtrlGridBibliaCapitulo.ColCount := Trunc(DBCtrlGridBibliaCapitulo.ClientWidth / 40);
+    //A consulta pode ter sido aberta antes da grade saber quantas colunas tem
+    completaColunasCapitulos;
 
     DBCtrlGridBibliaVersiculo.RowCount := Trunc(DBCtrlGridBibliaVersiculo.ClientHeight / 80);
     DBCtrlGridBibliaVersiculo.ColCount := 1;
@@ -14514,16 +14980,31 @@ begin
 
     for i := 0 to ComponentCount - 1 do
     begin
-      if Components[i].ClassType = TbsSkinScrollBox then
+      if Components[i] is TbsSkinScrollBox then
       begin
         ScrollBox := TbsSkinScrollBox(Components[i]);
+        if not ScrollBox.Visible then
+          Continue;
+
         GetWindowRect(ScrollBox.Handle, Rct);
         if (PtInRect(Rct, Pt)) and (ScrollBox.Parent.Visible) then
         begin
+          //Passo conforme a configuração do Windows, e não um valor fixo:
+          //o valor antigo (10 pixels) era o motivo de rolar tão devagar
+          if not SystemParametersInfo(SPI_GETWHEELSCROLLLINES, 0, @Delta, 0) then
+            Delta := 3;
+          if (Delta <= 0) then
+            Delta := 3;
+          Delta := Delta * ALTURA_LINHA_ROLAGEM;
+
           if Direction = 'Up' then
-            ScrollBox.VScrollBar.Position := ScrollBox.VScrollBar.Position - 10
+            ScrollBox.VScrollBar.Position := ScrollBox.VScrollBar.Position - Delta
           else
-            ScrollBox.VScrollBar.Position := ScrollBox.VScrollBar.Position + 10;
+            ScrollBox.VScrollBar.Position := ScrollBox.VScrollBar.Position + Delta;
+
+          //Sem isso o VCL segue distribuindo a roda e a aba rola junto
+          Handled := True;
+          Exit;
         end;
       end
       else if Components[i].ClassType = TDBCtrlGrid then
@@ -14545,6 +15026,9 @@ begin
             DBCtrlGrid.DataSource.DataSet.moveby(Delta*-1)
           else
             DBCtrlGrid.DataSource.DataSet.moveby(Delta);
+
+          Handled := True;
+          Exit;
         end;
       end;
            (*
@@ -14926,6 +15410,10 @@ end;
 
 procedure TfmIndex.DBCtrlGridBibliaCapituloClick(Sender: TObject);
 begin
+  //Preenchimento de coluna: não representa capítulo, não responde ao clique
+  if capituloEmBranco then
+    Exit;
+
   if (loadCol.Strings.Values['BIBLIA_LIVRO'] = loadCol.Strings.Values['BIBLIA_P_LIVRO']) and
      (DBCtrlGridBibliaCapitulo.DataSource.DataSet.FieldByName('CAPITULO').AsString = loadCol.Strings.Values['BIBLIA_P_CAPITULO']) then
   begin
@@ -14953,7 +15441,12 @@ begin
   try
     R:= Rect(1, 1, DBCtrlGrid.PanelWidth-2, DBCtrlGrid.PanelHeight-2);
 
-    if (StrToInt('0'+loadCol.Strings.Values['BIBLIA_CAPITULO']) = DBCtrlGrid.DataSource.DataSet.FieldByName('CAPITULO').AsInteger) then
+    if DBCtrlGrid.DataSource.DataSet.FieldByName('CAPITULO').IsNull then
+    begin
+      //Preenchimento de coluna: fica igual ao espaço livre da grade
+      DBCtrlGrid.Canvas.Brush.Color := DBCtrlGrid.Color;
+    end
+    else if (StrToInt('0'+loadCol.Strings.Values['BIBLIA_CAPITULO']) = DBCtrlGrid.DataSource.DataSet.FieldByName('CAPITULO').AsInteger) then
     begin
       txtdbBibliaCapitulo.Font.Color := $002E2E2E;
       txtdbBibliaCapitulo.DefaultFont.Color := $002E2E2E;
@@ -15045,6 +15538,10 @@ end;
 
 procedure TfmIndex.DBCtrlGridBibliaLivroClick(Sender: TObject);
 begin
+  //Preenchimento de coluna: não representa livro, não responde ao clique
+  if livroEmBranco then
+    Exit;
+
   if (DBCtrlGridBibliaLivro.DataSource.DataSet.FieldByName('ID').AsString = loadCol.Strings.Values['BIBLIA_P_LIVRO']) then
   begin
     loadCol.Strings.Values['BIBLIA_CAPITULO'] := loadCol.Strings.Values['BIBLIA_P_CAPITULO'];
@@ -15077,7 +15574,13 @@ begin
     R:= Rect(1, 1, DBCtrlGrid.PanelWidth-2, DBCtrlGrid.PanelHeight-2);
 
     txtdbBibliaLivroNm.Visible := (DBCtrlGrid.DataSource.DataSet.FieldByName('SIGLA_N').AsString <> '');
-    if (StrToInt('0'+loadCol.Strings.Values['BIBLIA_LIVRO']) = DBCtrlGrid.DataSource.DataSet.FieldByName('ID').AsInteger) then
+
+    if DBCtrlGrid.DataSource.DataSet.FieldByName('ID').IsNull then
+    begin
+      //Preenchimento de coluna: fica igual ao espaço livre da grade
+      DBCtrlGrid.Canvas.Brush.Color := DBCtrlGrid.Color;
+    end
+    else if (StrToInt('0'+loadCol.Strings.Values['BIBLIA_LIVRO']) = DBCtrlGrid.DataSource.DataSet.FieldByName('ID').AsInteger) then
     begin
       txtdbBibliaLivroSg.Font.Color := $002E2E2E;
       txtdbBibliaLivroSg.DefaultFont.Color := $002E2E2E;
@@ -15737,6 +16240,9 @@ begin
       begin
         CopyFile(PChar(arq),PChar(dir_dados+ExtractFileName(arq)),false);
         application.MessageBox('Arquivo importado com sucesso!'+#13#10+'O sistema será reiniciado para que as novas configurações tenham efeito!',TITULO,mb_ok+mb_iconinformation);
+
+        //Solta o mutex antes de relançar, senão a nova cópia se recusa a abrir
+        LiberaInstanciaUnica;
 
         ShellExecute(Handle,'open', PChar(Application.ExeName), nil, nil, SW_SHOWNORMAL);
         Application.Terminate;
