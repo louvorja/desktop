@@ -10906,7 +10906,7 @@ begin
     begin
       if (Sender <> nil) then
         application.MessageBox('Coloque o número para ser adicionado!', TITULO, mb_ok + mb_iconexclamation);
-      opSort_Ini.SetFocus;
+      if opSort_Ini.CanFocus then opSort_Ini.SetFocus;
       Exit;
     end;
     opSort_Ini.text := opSort_Fin.text;
@@ -10959,7 +10959,7 @@ begin
   opSort_Ini.text := '';
   opSort_Fin.text := '';
   SorteioContador();
-  opSort_Ini.SetFocus;
+  if opSort_Ini.CanFocus then opSort_Ini.SetFocus;
 end;
 
 procedure TfmIndex.btAddSorteioNMClick(Sender: TObject);
@@ -10975,7 +10975,7 @@ begin
   begin
     if (Sender <> nil) then
       application.MessageBox('Digite o nome para ser adicionado!', TITULO, mb_ok + mb_iconexclamation);
-    opSort_Nm.SetFocus;
+    if opSort_Nm.CanFocus then opSort_Nm.SetFocus;
     Exit;
   end;
 
@@ -11007,7 +11007,7 @@ begin
 
   opSort_NM.text := '';
   SorteioContador();
-  opSort_NM.SetFocus;
+  if opSort_NM.CanFocus then opSort_NM.SetFocus;
 end;
 
 procedure TfmIndex.btfsBoldClick(Sender: TObject);
@@ -11903,7 +11903,7 @@ begin
     if fMonitorSorteio <> nil then
       fMonitorSorteio.lmdSorteio.Caption := lmdSorteio.Caption;
     application.messagebox('Não há itens disponíveis para serem sorteados!', TITULO, mb_ok + mb_iconexclamation);
-    opSort_Ini.SetFocus;
+    if opSort_Ini.CanFocus then opSort_Ini.SetFocus;
     exit;
   end;
 

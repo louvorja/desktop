@@ -157,6 +157,13 @@ type
 
     // Rotas de comando
     procedure v2Draw(AResponseInfo: TIdHTTPResponseInfo; const acao: string);
+    procedure v2DrawAdd(ARequestInfo: TIdHTTPRequestInfo;
+      AResponseInfo: TIdHTTPResponseInfo; const acao: string);
+    procedure v2DrawRemove(ARequestInfo: TIdHTTPRequestInfo;
+      AResponseInfo: TIdHTTPResponseInfo; const acao: string);
+    procedure v2DrawLimpa(AResponseInfo: TIdHTTPResponseInfo;
+      const acao, acaoPedida: string);
+    procedure refazMapaSorteio;
     procedure v2Keyboard(ARequestInfo: TIdHTTPRequestInfo;
       AResponseInfo: TIdHTTPResponseInfo; const acao: string);
     procedure v2OpenSong(ARequestInfo: TIdHTTPRequestInfo;
@@ -173,8 +180,8 @@ implementation
 {$R *.dfm}
 
 uses
-  fmMusica, fmMenu, dmComponentes, System.SyncObjs, System.StrUtils,
-  IdURI, IdGlobal;
+  fmMusica, fmMenu, dmComponentes, fmMonitorSorteio, System.SyncObjs,
+  System.StrUtils, IdURI, IdGlobal;
 
 // ── Enumeração de interfaces de rede (iphlpapi) ─────────────────────────────
 
@@ -1822,18 +1829,28 @@ var
 begin
   acaoPedida := v2Acao(ARequestInfo);
 
-  if (acaoPedida = 'draw') then
+  if (acaoPedida = 'draw') or (acaoPedida = 'add') or (acaoPedida = 'remove') or
+     (acaoPedida = 'clear') or (acaoPedida = 'restart') then
   begin
     if not v2ExigeMetodo(ARequestInfo, AResponseInfo, acao, 'POST') then
       Exit;
-    v2Draw(AResponseInfo, acao);
+
+    if (acaoPedida = 'draw') then
+      v2Draw(AResponseInfo, acao)
+    else if (acaoPedida = 'add') then
+      v2DrawAdd(ARequestInfo, AResponseInfo, acao)
+    else if (acaoPedida = 'remove') then
+      v2DrawRemove(ARequestInfo, AResponseInfo, acao)
+    else
+      v2DrawLimpa(AResponseInfo, acao, acaoPedida);
+
     Exit;
   end;
 
   if (acaoPedida <> 'status') and (acaoPedida <> 'participants') then
   begin
     respondeV2AcaoInvalida(AResponseInfo, acao,
-      'status, participants (GET); draw (POST)');
+      'status, participants (GET); draw, add, remove, clear, restart (POST)');
     Exit;
   end;
 
@@ -2204,6 +2221,252 @@ begin
   respondeV2Ok(AResponseInfo, acao, 'ITEM_OPENED', '',
     '"id":"' + escapaJson(chave) + '","type":"' + escapaJson(tipo) + '"' +
     ',"mode":"' + modo + '"');
+end;
+
+{
+  Reconstrói os dois mapas do sorteio a partir da lista visual.
+
+  vlSorteio e vlSorteados guardam item -> índice na lbSorteio. Remover um item
+  do meio desloca todos os índices seguintes, e os mapas passam a apontar para
+  o vizinho errado. O programa nunca esbarrou nisso porque só apaga tudo, de
+  trás para frente; a API precisa remover um item só.
+
+  Chamar isto depois de qualquer remoção mantém os mapas coerentes, e de
+  quebra corrige desalinhamento que já existisse.
+
+  Deve rodar na thread da interface.
+}
+procedure TfTransmitir.refazMapaSorteio;
+var
+  i: Integer;
+  item: string;
+begin
+  fmIndex.vlSorteio.Strings.Clear;
+  fmIndex.vlSorteados.Strings.Clear;
+
+  for i := 0 to fmIndex.lbSorteio.Items.Count - 1 do
+  begin
+    item := fmIndex.lbSorteio.Items[i].Caption;
+    //Marcado quer dizer já sorteado
+    if fmIndex.lbSorteio.Items[i].Checked then
+      fmIndex.vlSorteados.Strings.Values[item] := IntToStr(i)
+    else
+      fmIndex.vlSorteio.Strings.Values[item] := IntToStr(i);
+  end;
+
+  fmIndex.SorteioContador;
+
+  if (fMonitorSorteio <> nil) then
+  begin
+    fMonitorSorteio.lbSorteio.Items := fmIndex.lbSorteio.Items;
+    fMonitorSorteio.lbSorteio.ItemIndex := fmIndex.lbSorteio.ItemIndex;
+  end;
+end;
+
+{
+  Acrescenta itens ao sorteio.
+
+  Aceita uma faixa numérica em from/to, ou um item avulso em item - que pode
+  ser número ou nome. Sem from a faixa começa em 1.
+
+  Reaproveita os handlers do programa em vez de repetir a regra: eles já
+  tratam item repetido, item que já foi sorteado voltando para o bolo, e a
+  formatação do número em quatro dígitos.
+}
+procedure TfTransmitir.v2DrawAdd(ARequestInfo: TIdHTTPRequestInfo;
+  AResponseInfo: TIdHTTPResponseInfo; const acao: string);
+var
+  txtDe, txtAte, item: string;
+  de, ate, antes, depois: Integer;
+begin
+  item := Trim(v2Param(ARequestInfo, 'item'));
+  txtDe := Trim(v2Param(ARequestInfo, 'from'));
+  txtAte := Trim(v2Param(ARequestInfo, 'to'));
+
+  if (item = '') and (txtDe = '') and (txtAte = '') then
+  begin
+    respondeV2Erro(AResponseInfo, 400, acao, 'MISSING_ITEM',
+      'Informe item, ou uma faixa em from e to');
+    Exit;
+  end;
+
+  de := 0;
+  ate := 0;
+
+  if (item = '') then
+  begin
+    //Sem from a faixa começa em 1
+    if (txtDe = '') then
+      de := 1
+    else
+      de := StrToIntDef(txtDe, -1);
+
+    if (txtAte = '') then
+      ate := de
+    else
+      ate := StrToIntDef(txtAte, -1);
+
+    if (de < 0) or (ate < 0) then
+    begin
+      respondeV2Erro(AResponseInfo, 400, acao, 'INVALID_RANGE',
+        'from e to devem ser números inteiros');
+      Exit;
+    end;
+
+    if (de > ate) then
+    begin
+      antes := de;
+      de := ate;
+      ate := antes;
+    end;
+
+    //Faixa muito larga trava a interface montando milhares de itens
+    if (ate - de) > 999 then
+    begin
+      respondeV2Erro(AResponseInfo, 400, acao, 'RANGE_TOO_LARGE',
+        'A faixa entre from e to não pode passar de 1000 itens');
+      Exit;
+    end;
+  end;
+
+  antes := 0;
+  depois := 0;
+
+  if not executaNaInterface(
+    procedure
+    begin
+      antes := fmIndex.lbSorteio.Items.Count;
+
+      if (item <> '') then
+      begin
+        fmIndex.opSort_Nm.Text := item;
+        fmIndex.btAddSorteioNMClick(nil);
+      end
+      else
+      begin
+        fmIndex.opSort_Ini.Text := IntToStr(de);
+        fmIndex.opSort_Fin.Text := IntToStr(ate);
+        fmIndex.btAddSorteioClick(nil);
+      end;
+
+      depois := fmIndex.lbSorteio.Items.Count;
+    end, TIMEOUT_COMANDO) then
+  begin
+    respondeV2Ocupado(AResponseInfo, acao);
+    Exit;
+  end;
+
+  respondeV2Ok(AResponseInfo, acao, 'ITEMS_ADDED', '',
+    '"added":' + IntToStr(depois - antes) +
+    ',"count":' + IntToStr(depois));
+end;
+
+{
+  Remove um item do sorteio.
+
+  Não existe equivalente no programa: pela tela só dá para apagar tudo. Por
+  isso a remoção é feita aqui, e os mapas são refeitos logo depois.
+}
+procedure TfTransmitir.v2DrawRemove(ARequestInfo: TIdHTTPRequestInfo;
+  AResponseInfo: TIdHTTPResponseInfo; const acao: string);
+var
+  item: string;
+  achou: Boolean;
+  restantes: Integer;
+begin
+  item := Trim(v2Param(ARequestInfo, 'item'));
+  if (item = '') then
+  begin
+    respondeV2Erro(AResponseInfo, 400, acao, 'MISSING_ITEM',
+      'Informe em item o número ou nome a remover, como aparece em participants');
+    Exit;
+  end;
+
+  achou := False;
+  restantes := 0;
+
+  if not executaNaInterface(
+    procedure
+    var
+      i: Integer;
+    begin
+      for i := fmIndex.lbSorteio.Items.Count - 1 downto 0 do
+        if SameText(Trim(fmIndex.lbSorteio.Items[i].Caption), item) then
+        begin
+          fmIndex.lbSorteio.Items.Delete(i);
+          achou := True;
+        end;
+
+      if achou then
+        refazMapaSorteio;
+
+      restantes := fmIndex.lbSorteio.Items.Count;
+    end, TIMEOUT_COMANDO) then
+  begin
+    respondeV2Ocupado(AResponseInfo, acao);
+    Exit;
+  end;
+
+  if not achou then
+  begin
+    respondeV2Erro(AResponseInfo, 404, acao, 'ITEM_NOT_FOUND',
+      'Item não está no sorteio');
+    Exit;
+  end;
+
+  respondeV2Ok(AResponseInfo, acao, 'ITEM_REMOVED', '',
+    '"item":"' + escapaJson(item) + '","count":' + IntToStr(restantes));
+end;
+
+{
+  clear apaga todos os itens; restart devolve os sorteados para o bolo sem
+  apagar a lista.
+
+  Os botões correspondentes abrem caixa de confirmação, que pela API travaria
+  a interface esperando o operador - então o efeito é reproduzido aqui.
+}
+procedure TfTransmitir.v2DrawLimpa(AResponseInfo: TIdHTTPResponseInfo;
+  const acao, acaoPedida: string);
+var
+  restantes: Integer;
+begin
+  restantes := 0;
+
+  if not executaNaInterface(
+    procedure
+    var
+      i: Integer;
+    begin
+      if (acaoPedida = 'clear') then
+        fmIndex.lbSorteio.Items.Clear
+      else
+        //restart: nada é apagado, só deixa de estar sorteado
+        for i := 0 to fmIndex.lbSorteio.Items.Count - 1 do
+          fmIndex.lbSorteio.Items[i].Checked := False;
+
+      fmIndex.lbSorteado.Items.Clear;
+      fmIndex.lmdSorteio.Caption := '----';
+
+      refazMapaSorteio;
+
+      if (fMonitorSorteio <> nil) then
+      begin
+        fMonitorSorteio.lbSorteado.Items.Clear;
+        fMonitorSorteio.lmdSorteio.Caption := fmIndex.lmdSorteio.Caption;
+      end;
+
+      restantes := fmIndex.lbSorteio.Items.Count;
+    end, TIMEOUT_COMANDO) then
+  begin
+    respondeV2Ocupado(AResponseInfo, acao);
+    Exit;
+  end;
+
+  if (acaoPedida = 'clear') then
+    respondeV2Ok(AResponseInfo, acao, 'DRAWING_CLEARED', '', '"count":0')
+  else
+    respondeV2Ok(AResponseInfo, acao, 'DRAWING_RESTARTED', '',
+      '"count":' + IntToStr(restantes));
 end;
 
 {
