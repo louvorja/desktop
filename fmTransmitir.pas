@@ -148,6 +148,13 @@ type
     procedure v2SearchSongs(ARequestInfo: TIdHTTPRequestInfo;
       AResponseInfo: TIdHTTPResponseInfo; const acao: string);
 
+    // Liturgia
+    procedure v2Liturgy(ARequestInfo: TIdHTTPRequestInfo;
+      AResponseInfo: TIdHTTPResponseInfo; const acao: string);
+    procedure v2LiturgyAbre(ARequestInfo: TIdHTTPRequestInfo;
+      AResponseInfo: TIdHTTPResponseInfo; const acao: string);
+    function v2LiturgyDiaDoItem(const chave: string): Integer;
+
     // Rotas de comando
     procedure v2Draw(AResponseInfo: TIdHTTPResponseInfo; const acao: string);
     procedure v2Keyboard(ARequestInfo: TIdHTTPRequestInfo;
@@ -1891,6 +1898,315 @@ begin
 end;
 
 {
+  Liturgia: lista os itens do dia e abre um deles.
+
+  A lista é lida direto do liturgia.ja, e não dos painéis da tela. Isso é
+  proposital: os painéis só passam a existir quando o operador abre a aba
+  Liturgia pela primeira vez - tsLiturgiaShow atribui cbBloqItens.Checked,
+  o que dispara cbBloqItensClick, que chama LiturgiaCalendarClick e só então
+  monta os itens. Lendo do arquivo, consultar pela API funciona com o programa
+  recém-aberto.
+
+  Abrir um item, ao contrário, depende dos painéis, porque reaproveita o mesmo
+  handler que o clique do operador usa. Por isso v2LiturgyAbre garante o
+  carregamento antes.
+}
+procedure TfTransmitir.v2Liturgy(ARequestInfo: TIdHTTPRequestInfo;
+  AResponseInfo: TIdHTTPResponseInfo; const acao: string);
+var
+  acaoPedida, itens, semanaTxt: string;
+  semana, total: Integer;
+begin
+  acaoPedida := v2Acao(ARequestInfo);
+
+  if (acaoPedida = 'open') then
+  begin
+    if not v2ExigeMetodo(ARequestInfo, AResponseInfo, acao, 'POST') then
+      Exit;
+    v2LiturgyAbre(ARequestInfo, AResponseInfo, acao);
+    Exit;
+  end;
+
+  if (acaoPedida <> 'list') then
+  begin
+    respondeV2AcaoInvalida(AResponseInfo, acao, 'list (GET); open (POST)');
+    Exit;
+  end;
+
+  if not v2ExigeMetodo(ARequestInfo, AResponseInfo, acao, 'GET') then
+    Exit;
+
+  //Dia da semana no formato do programa: 1 = domingo ... 7 = sábado
+  semanaTxt := Trim(v2Param(ARequestInfo, 'week'));
+  if (semanaTxt = '') then
+    semana := 0
+  else
+  begin
+    semana := StrToIntDef(semanaTxt, -1);
+    if (semana < 1) or (semana > 7) then
+    begin
+      respondeV2Erro(AResponseInfo, 400, acao, 'INVALID_WEEK',
+        'Parâmetro week deve ser de 1 (domingo) a 7 (sábado)');
+      Exit;
+    end;
+  end;
+
+  itens := '';
+  total := 0;
+
+  if not executaNaInterface(
+    procedure
+    var
+      lista: TStringList;
+      consulta: TFDQuery;
+      i, idMusica: Integer;
+      chave, tipo, marcado, extra: string;
+      temPlayback, escolhe: Boolean;
+    begin
+      //Sem week explícito usa o dia que a tela está mostrando, ou hoje
+      if (semana = 0) then
+      begin
+        semana := StrToIntDef(
+          fmIndex.loadCol.Strings.Values['LITURGIA:SEMANA'], 0);
+        if (semana < 1) or (semana > 7) then
+          semana := DayOfWeek(Now);
+      end;
+
+      lista := TStringList.Create;
+      try
+        lista.Delimiter := ';';
+        lista.StrictDelimiter := True;
+        lista.DelimitedText :=
+          fmIndex.lerParam('Geral', IntToStr(semana), '', fmIndex.arq_liturgia);
+
+        for i := 0 to lista.Count - 1 do
+        begin
+          chave := Trim(lista[i]);
+          if (chave = '') then
+            Continue;
+
+          tipo := fmIndex.lerParam(chave, 'tipo', '', fmIndex.arq_liturgia);
+          //O programa marca a conclusão gravando a data do dia
+          marcado := fmIndex.lerParam(chave, 'checked', '', fmIndex.arq_liturgia);
+
+          extra := '';
+          if (tipo = 'musica') then
+          begin
+            idMusica := StrToIntDef(
+              fmIndex.lerParam(chave, 'musica', '0', fmIndex.arq_liturgia), 0);
+            //escolha=1: o item não fixa a música, ela é escolhida ao abrir
+            escolhe := (fmIndex.lerParam(chave, 'escolha', '0', fmIndex.arq_liturgia) = '1');
+
+            {
+              Mesma regra que o programa usa para decidir se mostra o ícone de
+              playback: música indefinida (-1) ou não encontrada valem como
+              disponível, senão depende de URL_INSTRUMENTAL estar preenchido.
+            }
+            if (idMusica = -1) then
+              temPlayback := True
+            else
+            begin
+              temPlayback := True;
+              consulta := TFDQuery.Create(nil);
+              try
+                consulta.Connection := DM.ADO;
+                consulta.SQL.Text :=
+                  'SELECT URL_INSTRUMENTAL FROM LISTA_MUSICAS WHERE ID = :ID';
+                consulta.ParamByName('ID').AsInteger := idMusica;
+                consulta.Open;
+                if not consulta.IsEmpty then
+                  temPlayback :=
+                    (Trim(consulta.FieldByName('URL_INSTRUMENTAL').AsString) <> '');
+              finally
+                consulta.Free;
+              end;
+            end;
+
+            extra :=
+              ',"song_id":' + IntToStr(idMusica) +
+              ',"choose_song":' + IfThen(escolhe, 'true', 'false') +
+              ',"has_playback":' + IfThen(temPlayback, 'true', 'false');
+          end;
+
+          if (itens <> '') then
+            itens := itens + ',';
+
+          itens := itens +
+            '{"id":"' + escapaJson(chave) + '"' +
+            ',"type":"' + escapaJson(tipo) + '"' +
+            ',"title":"' + escapaJson(
+              fmIndex.lerParam(chave, 'item', '', fmIndex.arq_liturgia)) + '"' +
+            ',"subtitle":"' + escapaJson(
+              fmIndex.lerParam(chave, 'subitem', '', fmIndex.arq_liturgia)) + '"' +
+            ',"done":' + IfThen(
+              marcado = FormatDateTime('dd/mm/yyyy', Now), 'true', 'false') +
+            extra +
+            '}';
+
+          Inc(total);
+        end;
+      finally
+        lista.Free;
+      end;
+    end, TIMEOUT_INTERFACE) then
+  begin
+    respondeV2Ocupado(AResponseInfo, acao);
+    Exit;
+  end;
+
+  respondeV2Ok(AResponseInfo, acao, 'LITURGY_LIST', '',
+    '"week":' + IntToStr(semana) +
+    ',"count":' + IntToStr(total) +
+    ',"items":[' + itens + ']');
+end;
+
+//Em que dia da semana o item está. Zero quando não aparece em nenhum.
+function TfTransmitir.v2LiturgyDiaDoItem(const chave: string): Integer;
+var
+  lista: TStringList;
+  dia, i: Integer;
+begin
+  Result := 0;
+  lista := TStringList.Create;
+  try
+    lista.Delimiter := ';';
+    for dia := 1 to 7 do
+    begin
+      lista.DelimitedText :=
+        fmIndex.lerParam('Geral', IntToStr(dia), '', fmIndex.arq_liturgia);
+      for i := 0 to lista.Count - 1 do
+        if SameText(Trim(lista[i]), chave) then
+          Exit(dia);
+    end;
+  finally
+    lista.Free;
+  end;
+end;
+
+{
+  Abre um item da liturgia.
+
+  Reaproveita lit_modItem_textoClick, o mesmo handler do clique do operador,
+  para que a API não tenha uma segunda versão da lógica que possa divergir.
+  Esse handler descobre o item pelo nome do painel e escolhe a variante pelo
+  Tag do componente clicado, então aqui o Tag é ajustado e devolvido ao valor
+  original em seguida.
+}
+procedure TfTransmitir.v2LiturgyAbre(ARequestInfo: TIdHTTPRequestInfo;
+  AResponseInfo: TIdHTTPResponseInfo; const acao: string);
+var
+  chave, modo, tipo: string;
+  marca: Integer;
+  achou, ehCategoria: Boolean;
+begin
+  chave := Trim(v2Param(ARequestInfo, 'id'));
+  if (chave = '') then
+  begin
+    respondeV2Erro(AResponseInfo, 400, acao, 'MISSING_ID',
+      'Informe em id a chave do item, obtida em action=list');
+    Exit;
+  end;
+
+  modo := LowerCase(Trim(v2Param(ARequestInfo, 'mode')));
+  if (modo = '') then
+    modo := 'normal';
+
+  //As variantes valem para item do tipo música e correspondem ao Tag que o
+  //programa usa em cada ícone da linha
+  if (modo = 'normal') then marca := 0
+  else if (modo = 'pb') then marca := 2
+  else if (modo = 'no-audio') then marca := 3
+  else if (modo = 'file') then marca := 4
+  else if (modo = 'playback') then marca := 5
+  else
+  begin
+    respondeV2Erro(AResponseInfo, 400, acao, 'INVALID_MODE',
+      'Parâmetro mode deve ser normal, pb, no-audio, file ou playback');
+    Exit;
+  end;
+
+  achou := False;
+  ehCategoria := False;
+  tipo := '';
+
+  if not executaNaInterface(
+    procedure
+    var
+      alvo: TComponent;
+      tagOriginal, diaItem: Integer;
+    begin
+      tipo := fmIndex.lerParam(chave, 'tipo', '', fmIndex.arq_liturgia);
+      ehCategoria := (tipo = 'categoria');
+      if (tipo = '') or ehCategoria then
+        Exit;
+
+      {
+        Os painéis só existem depois que a liturgia daquele dia é montada, e
+        comandar pela API não pode depender de o operador ter aberto a aba.
+
+        Monta-se o dia a que o item pertence, não o de hoje: a liturgia
+        costuma estar preenchida no sábado, e montar hoje deixaria o item de
+        outro dia sem painel. O dia é descoberto procurando a chave nas listas
+        de 1 a 7 do próprio arquivo.
+      }
+      if (fmIndex.FindComponent(chave + '_texto') = nil) then
+      begin
+        diaItem := v2LiturgyDiaDoItem(chave);
+        if (diaItem > 0) then
+        begin
+          fmIndex.loadCol.Strings.Values['LITURGIA:SEMANA'] := IntToStr(diaItem);
+          fmIndex.carregaLiturgia(diaItem);
+        end;
+      end;
+
+      alvo := fmIndex.FindComponent(chave + '_texto');
+      if (alvo = nil) then
+        Exit;
+
+      achou := True;
+
+      tagOriginal := TComponent(alvo).Tag;
+      try
+        TComponent(alvo).Tag := marca;
+        fmIndex.lit_modItem_textoClick(alvo);
+      finally
+        TComponent(alvo).Tag := tagOriginal;
+      end;
+    end, TIMEOUT_COMANDO) then
+  begin
+    respondeV2Ocupado(AResponseInfo, acao);
+    Exit;
+  end;
+
+  if (tipo = '') then
+  begin
+    respondeV2Erro(AResponseInfo, 404, acao, 'ITEM_NOT_FOUND',
+      'Item não encontrado na liturgia');
+    Exit;
+  end;
+
+  //Clicar numa categoria abre o seletor de cor, que é um diálogo modal e
+  //deixaria a interface travada esperando o operador
+  if ehCategoria then
+  begin
+    respondeV2Erro(AResponseInfo, 409, acao, 'ITEM_IS_CATEGORY',
+      'Item é uma categoria e não abre nada');
+    Exit;
+  end;
+
+  if not achou then
+  begin
+    respondeV2Erro(AResponseInfo, 409, acao, 'ITEM_NOT_LOADED',
+      'O item existe no arquivo mas não está carregado na tela');
+    Exit;
+  end;
+
+  respondeV2Ok(AResponseInfo, acao, 'ITEM_OPENED', '',
+    '"id":"' + escapaJson(chave) + '","type":"' + escapaJson(tipo) + '"' +
+    ',"mode":"' + modo + '"');
+end;
+
+{
   Dispara um sorteio.
 
   Os dois impedimentos são checados antes de clicar no botão porque o
@@ -2277,6 +2593,12 @@ begin
   if SameText(rota, ROTA_V2 + '/search-songs') then
   begin
     v2SearchSongs(ARequestInfo, AResponseInfo, acao);
+    Exit;
+  end;
+
+  if SameText(rota, ROTA_V2 + '/liturgy') then
+  begin
+    v2Liturgy(ARequestInfo, AResponseInfo, acao);
     Exit;
   end;
 
