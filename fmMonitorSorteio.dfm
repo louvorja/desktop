@@ -57,6 +57,7 @@ object fMonitorSorteio: TfMonitorSorteio
       ParentShowHint = False
       ShowHint = False
       Layout = tlCenter
+      WordWrap = True
       ExplicitLeft = 91
       ExplicitTop = 129
       ExplicitWidth = 413
