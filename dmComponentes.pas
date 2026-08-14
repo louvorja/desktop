@@ -225,7 +225,7 @@ implementation
 
 uses fmMenu, fmArquivosFalta, fmHelp, fmIniciando, fmTransmitir,
   fmMonitorRelogio, fmMonitorCronometro,
-  fmMonitorSorteio, fmMonitorCronometroCulto;
+  fmMonitorSorteio, fmMonitorCronometroCulto, fmVideoOn;
 
 {$R *.dfm}
 
@@ -352,7 +352,7 @@ begin
         if tsCronometro.TabVisible = false then
           abrePagina(tsCronometro);
         PageControl1.ActivePage := tsCronometro;
-        //application.messagebox('Tempo esgotado!', PChar(TITULO + ' - Cronï¿½metro'), mb_ok + mb_iconinformation);
+        //application.messagebox('Tempo esgotado!', PChar(TITULO + ' - Cron?metro'), mb_ok + mb_iconinformation);
         btZerarCrono.Tag := 1;
         //Sender aqui e o proprio tmrCrono; a rotina espera o botao
         btZerarCronoClick(btZerarCrono);
@@ -385,6 +385,50 @@ end;
 
 procedure TDM.tmrPlayerTimer(Sender: TObject);
 begin
+  //V?deo online: o estado vem do navegador e chega de forma ass?ncrona, ent?o
+  //aqui se l? o ?ltimo valor recebido e se pede o pr?ximo
+  if (fmIndex.origemPlayer = 'YOUTUBE') then
+  begin
+    if (fVideoOn = nil) or (not fVideoOn.Visible) then
+    begin
+      fmIndex.btplFecharClick(Sender);
+      Exit;
+    end;
+
+    {
+      Só atribui o que mudou de fato. Estes controles repintam a cada
+      atribuição, mesmo recebendo o valor que já tinham, e este timer roda
+      quatro vezes por segundo - era isso que fazia os botões piscarem.
+    }
+    if (fVideoOn.duracao > 0) then
+    begin
+      if (fmIndex.pbPlayer.MaxValue <> Round(fVideoOn.duracao * 1000)) then
+        fmIndex.pbPlayer.MaxValue := Round(fVideoOn.duracao * 1000);
+      if (fmIndex.pbPlayer.Value <> Round(fVideoOn.tempoAtual * 1000)) then
+        fmIndex.pbPlayer.Value := Round(fVideoOn.tempoAtual * 1000);
+    end;
+
+    //Os bot?es acompanham o que o operador fizer pelo pr?prio v?deo, mas s?
+    //depois de o navegador informar algum estado: antes disso o estado ? -1 e
+    //os bot?es piscariam para "pausado" logo na abertura
+    if (fVideoOn.estado >= 0) then
+    begin
+      //O SetDown da biblioteca repinta sempre e, em botão agrupado, ainda
+      //manda os vizinhos do painel repintarem junto
+      if (fmIndex.btplPlay.Down <> fVideoOn.tocando) then
+        fmIndex.btplPlay.Down := fVideoOn.tocando;
+      if (fmIndex.btplPause.Down = fVideoOn.tocando) then
+        fmIndex.btplPause.Down := not fVideoOn.tocando;
+    end;
+
+    if fVideoOn.terminou then
+      fmIndex.btplFecharClick(Sender)
+    else
+      fVideoOn.consultaEstado;
+
+    Exit;
+  end;
+
   fmIndex.pbPlayer.Value := fmIndex.MediaPlayer1.Position;
   if fmIndex.MediaPlayer1.Position >= fmIndex.MediaPlayer1.Length
     then fmIndex.btplFecharClick(Sender);
