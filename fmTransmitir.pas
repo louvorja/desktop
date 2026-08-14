@@ -148,6 +148,14 @@ type
     procedure v2SearchSongs(ARequestInfo: TIdHTTPRequestInfo;
       AResponseInfo: TIdHTTPResponseInfo; const acao: string);
 
+    // Reprodução (player de arquivos)
+    procedure v2Media(ARequestInfo: TIdHTTPRequestInfo;
+      AResponseInfo: TIdHTTPResponseInfo; const acao: string);
+
+    // Vídeos online
+    procedure v2OnlineVideos(ARequestInfo: TIdHTTPRequestInfo;
+      AResponseInfo: TIdHTTPResponseInfo; const acao: string);
+
     // Bíblia
     procedure v2Bible(ARequestInfo: TIdHTTPRequestInfo;
       AResponseInfo: TIdHTTPResponseInfo; const acao: string);
@@ -189,7 +197,8 @@ implementation
 {$R *.dfm}
 
 uses
-  fmMusica, fmMenu, dmComponentes, fmMonitorSorteio, System.SyncObjs,
+  fmMusica, fmMenu, dmComponentes, fmMonitorSorteio, fmVideoOn, Vcl.MPlayer,
+  System.SyncObjs,
   System.StrUtils, IdURI, IdGlobal;
 
 // ── Enumeração de interfaces de rede (iphlpapi) ─────────────────────────────
@@ -1924,6 +1933,329 @@ begin
 end;
 
 {
+  Reprodução: expõe o painel de mídia do programa.
+
+  O painel controla tanto o player de arquivos (MediaPlayer1, via MCI) quanto
+  o vídeo online (WebView2). Qual dos dois está no ar vem de origemPlayer, o
+  mesmo campo que os botões da tela consultam.
+
+  Os botões da tela alternam estado antes de agir: chamar o handler com o
+  botão solto apenas o marca e sai, sem tocar no player. Por isso o estado é
+  ajustado antes de acionar o handler.
+}
+procedure TfTransmitir.v2Media(ARequestInfo: TIdHTTPRequestInfo;
+  AResponseInfo: TIdHTTPResponseInfo; const acao: string);
+var
+  acaoPedida, arquivo: string;
+  ativo, tocando, ehYoutube: Boolean;
+  posicao, duracao, destino: Integer;
+begin
+  acaoPedida := v2Acao(ARequestInfo);
+
+  if (acaoPedida = 'status') then
+  begin
+    if not v2ExigeMetodo(ARequestInfo, AResponseInfo, acao, 'GET') then
+      Exit;
+  end
+  else if (acaoPedida = 'play') or (acaoPedida = 'pause') or
+          (acaoPedida = 'close') or (acaoPedida = 'seek') then
+  begin
+    if not v2ExigeMetodo(ARequestInfo, AResponseInfo, acao, 'POST') then
+      Exit;
+  end
+  else
+  begin
+    respondeV2AcaoInvalida(AResponseInfo, acao,
+      'status (GET); play, pause, seek, close (POST)');
+    Exit;
+  end;
+
+  destino := -1;
+  if (acaoPedida = 'seek') then
+  begin
+    //Aceita segundos, que é o que o cliente costuma ter em mãos
+    destino := Round(StrToFloatDef(
+      StringReplace(Trim(v2Param(ARequestInfo, 'seconds')), ',', '.', []),
+      -1, TFormatSettings.Invariant) * 1000);
+
+    if (destino < 0) then
+    begin
+      respondeV2Erro(AResponseInfo, 400, acao, 'INVALID_POSITION',
+        'Informe em seconds a posição desejada, em segundos');
+      Exit;
+    end;
+  end;
+
+  ativo := False;
+  tocando := False;
+  arquivo := '';
+  posicao := 0;
+  duracao := 0;
+
+  if not executaNaInterface(
+    procedure
+    begin
+      //O painel visível é o que indica haver reprodução em curso; origemPlayer
+      //diz se quem toca é o arquivo local ou o vídeo online
+      ehYoutube := (fmIndex.origemPlayer = 'YOUTUBE');
+      ativo := fmIndex.pnlPlayer.Visible;
+
+      if ativo and (acaoPedida <> 'status') then
+      begin
+        if (acaoPedida = 'play') then
+        begin
+          fmIndex.btplPlay.Down := True;
+          fmIndex.btplPlayClick(nil);
+        end
+        else if (acaoPedida = 'pause') then
+        begin
+          fmIndex.btplPause.Down := True;
+          fmIndex.btplPauseClick(nil);
+        end
+        else if (acaoPedida = 'close') then
+          fmIndex.btplFecharClick(nil)
+        else
+        begin
+          //Mesma sequência do clique na barra de progresso
+          DM.tmrPlayer.Enabled := False;
+          if ehYoutube then
+          begin
+            if (fVideoOn <> nil) then
+            begin
+              fVideoOn.buscaSegundos(destino / 1000);
+              if fmIndex.btplPlay.Down then
+                fVideoOn.reproduz;
+            end;
+          end
+          else
+          begin
+            fmIndex.MediaPlayer1.Position := destino;
+            if fmIndex.btplPlay.Down then
+              fmIndex.MediaPlayer1.Play;
+          end;
+          DM.tmrPlayer.Enabled := True;
+        end;
+      end;
+
+      ativo := fmIndex.pnlPlayer.Visible;
+      if ativo then
+      begin
+        arquivo := fmIndex.lblPlayer.Caption;
+        //Vídeo online: estado e tempo vêm do navegador, em segundos; o player
+        //de arquivos responde em milissegundos
+        if ehYoutube and (fVideoOn <> nil) then
+        begin
+          tocando := fVideoOn.tocando;
+          posicao := Round(fVideoOn.tempoAtual * 1000);
+          duracao := Round(fVideoOn.duracao * 1000);
+        end
+        else
+        begin
+          tocando := (fmIndex.MediaPlayer1.Mode = mpPlaying);
+          posicao := fmIndex.MediaPlayer1.Position;
+          duracao := fmIndex.MediaPlayer1.Length;
+        end;
+      end;
+    end, TIMEOUT_COMANDO) then
+  begin
+    respondeV2Ocupado(AResponseInfo, acao);
+    Exit;
+  end;
+
+  if not ativo then
+  begin
+    if (acaoPedida = 'status') then
+      respondeV2Ok(AResponseInfo, acao, 'NO_MEDIA', 'Nada em reprodução',
+        '"active":false')
+    else
+      respondeV2Erro(AResponseInfo, 409, acao, 'NO_MEDIA',
+        'Nada em reprodução');
+    Exit;
+  end;
+
+  respondeV2Ok(AResponseInfo, acao,
+    IfThen(tocando, 'MEDIA_PLAYING', 'MEDIA_PAUSED'), '',
+    '"active":true' +
+    ',"playing":' + IfThen(tocando, 'true', 'false') +
+    ',"file":"' + escapaJson(arquivo) + '"' +
+    ',"position":' + FormatFloat('0.###', posicao / 1000, TFormatSettings.Invariant) +
+    ',"duration":' + FormatFloat('0.###', duracao / 1000, TFormatSettings.Invariant));
+end;
+
+{
+  Vídeos online: navegação por canal, playlist e vídeo, e abertura de um deles.
+
+  As listagens saem direto do banco, como as da bíblia: consultar não depende
+  de o operador ter aberto a aba nem mexe no que ele está vendo. Abrir usa o
+  abreVideoOn do programa, que é o mesmo caminho do clique na tela.
+}
+procedure TfTransmitir.v2OnlineVideos(ARequestInfo: TIdHTTPRequestInfo;
+  AResponseInfo: TIdHTTPResponseInfo; const acao: string);
+var
+  acaoPedida, canal, playlist, video, titulo, dados: string;
+  achou: Boolean;
+begin
+  acaoPedida := v2Acao(ARequestInfo);
+
+  canal := Trim(v2Param(ARequestInfo, 'channel'));
+  playlist := Trim(v2Param(ARequestInfo, 'playlist'));
+  video := Trim(v2Param(ARequestInfo, 'id'));
+
+  // ---- abrir ----
+  if (acaoPedida = 'open') then
+  begin
+    if not v2ExigeMetodo(ARequestInfo, AResponseInfo, acao, 'POST') then
+      Exit;
+
+    if (video = '') then
+    begin
+      respondeV2Erro(AResponseInfo, 400, acao, 'MISSING_ID',
+        'Informe em id o código do vídeo, obtido em action=videos');
+      Exit;
+    end;
+
+    titulo := Trim(v2Param(ARequestInfo, 'title'));
+    achou := False;
+
+    if not executaNaInterface(
+      procedure
+      var
+        consulta: TFDQuery;
+      begin
+        //Sem título informado busca o nome cadastrado, para a janela do vídeo
+        //aparecer identificada como quando é aberta pela tela
+        if (titulo = '') then
+        begin
+          consulta := TFDQuery.Create(nil);
+          try
+            consulta.Connection := DM.ADO;
+            consulta.SQL.Text :=
+              'SELECT NOME FROM ONL_VIDEOS WHERE VIDEO_ID = :ID';
+            consulta.ParamByName('ID').AsString := video;
+            consulta.Open;
+            if not consulta.IsEmpty then
+            begin
+              titulo := consulta.FieldByName('NOME').AsString;
+              achou := True;
+            end;
+          finally
+            consulta.Free;
+          end;
+        end
+        else
+          achou := True;
+
+        fmIndex.abreVideoOn(video, titulo);
+      end, TIMEOUT_COMANDO) then
+    begin
+      respondeV2Ocupado(AResponseInfo, acao);
+      Exit;
+    end;
+
+    //Vídeo fora do catálogo é aceito de propósito: o identificador do YouTube
+    //vale por si, e a tela também abre vídeo avulso
+    respondeV2Ok(AResponseInfo, acao, 'VIDEO_OPENED', '',
+      '"id":"' + escapaJson(video) + '"' +
+      ',"title":"' + escapaJson(titulo) + '"' +
+      ',"in_catalog":' + IfThen(achou, 'true', 'false'));
+    Exit;
+  end;
+
+  // ---- listagens ----
+  if (acaoPedida <> 'channels') and (acaoPedida <> 'playlists') and
+     (acaoPedida <> 'videos') then
+  begin
+    respondeV2AcaoInvalida(AResponseInfo, acao,
+      'channels, playlists, videos (GET); open (POST)');
+    Exit;
+  end;
+
+  if not v2ExigeMetodo(ARequestInfo, AResponseInfo, acao, 'GET') then
+    Exit;
+
+  if (acaoPedida = 'playlists') and (canal = '') then
+  begin
+    respondeV2Erro(AResponseInfo, 400, acao, 'MISSING_CHANNEL',
+      'Informe em channel o código do canal, obtido em action=channels');
+    Exit;
+  end;
+
+  if (acaoPedida = 'videos') and (playlist = '') then
+  begin
+    respondeV2Erro(AResponseInfo, 400, acao, 'MISSING_PLAYLIST',
+      'Informe em playlist o código da playlist, obtido em action=playlists');
+    Exit;
+  end;
+
+  dados := '';
+
+  if not executaNaInterface(
+    procedure
+    var
+      consulta: TFDQuery;
+      lista, sql: string;
+    begin
+      if (acaoPedida = 'channels') then
+        sql := 'SELECT CANAL_ID, NOME FROM ONL_CANAIS ORDER BY NOME'
+      else if (acaoPedida = 'playlists') then
+        sql := 'SELECT PLAYLIST_ID, NOME FROM ONL_PLAYLISTS' +
+               ' WHERE CANAL_ID = :CANAL ORDER BY NOME'
+      else
+        sql := 'SELECT VIDEO_ID, NOME FROM ONL_VIDEOS' +
+               ' WHERE PLAYLIST_ID = :PLAYLIST ORDER BY POSICAO, NOME';
+
+      lista := '';
+      consulta := TFDQuery.Create(nil);
+      try
+        consulta.Connection := DM.ADO;
+        consulta.SQL.Text := sql;
+        if (consulta.Params.FindParam('CANAL') <> nil) then
+          consulta.ParamByName('CANAL').AsString := canal;
+        if (consulta.Params.FindParam('PLAYLIST') <> nil) then
+          consulta.ParamByName('PLAYLIST').AsString := playlist;
+        consulta.Open;
+
+        while not consulta.Eof do
+        begin
+          if (lista <> '') then
+            lista := lista + ',';
+
+          if (acaoPedida = 'channels') then
+            lista := lista +
+              '{"id":"' + escapaJson(consulta.FieldByName('CANAL_ID').AsString) + '"'
+          else if (acaoPedida = 'playlists') then
+            lista := lista +
+              '{"id":"' + escapaJson(consulta.FieldByName('PLAYLIST_ID').AsString) + '"'
+          else
+            lista := lista +
+              '{"id":"' + escapaJson(consulta.FieldByName('VIDEO_ID').AsString) + '"';
+
+          lista := lista +
+            ',"nome":"' + escapaJson(consulta.FieldByName('NOME').AsString) + '"}';
+
+          consulta.Next;
+        end;
+      finally
+        consulta.Free;
+      end;
+
+      if (acaoPedida = 'channels') then
+        dados := '"channels":[' + lista + ']'
+      else if (acaoPedida = 'playlists') then
+        dados := '"channel":"' + escapaJson(canal) + '","playlists":[' + lista + ']'
+      else
+        dados := '"playlist":"' + escapaJson(playlist) + '","videos":[' + lista + ']';
+    end, TIMEOUT_INTERFACE) then
+  begin
+    respondeV2Ocupado(AResponseInfo, acao);
+    Exit;
+  end;
+
+  respondeV2Ok(AResponseInfo, acao,
+    'ONLINE_' + UpperCase(acaoPedida), '', dados);
+end;
+
+{
   Versão bíblica em uso.
 
   Enquanto a aba não foi aberta o estado em memória está vazio, e vale o que
@@ -3216,6 +3548,18 @@ begin
     Exit;
   end;
 
+
+
+  if SameText(rota, ROTA_V2 + '/media') then
+  begin
+    v2Media(ARequestInfo, AResponseInfo, acao);
+    Exit;
+  end;
+  if SameText(rota, ROTA_V2 + '/online-videos') then
+  begin
+    v2OnlineVideos(ARequestInfo, AResponseInfo, acao);
+    Exit;
+  end;
   if SameText(rota, ROTA_V2 + '/bible') then
   begin
     v2Bible(ARequestInfo, AResponseInfo, acao);
