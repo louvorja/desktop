@@ -1708,6 +1708,7 @@ type
     procedure formataTexto(RichEdit: TbsSkinRichEdit);
     procedure FormResize(Sender: TObject);
     procedure tsBibliaShow(Sender: TObject);
+    procedure inicializaBiblia;
     function ExtraiTexto(const Str, Str1, Str2: string): string;
     procedure carregaParams();
     function GetComputerNameFunc: string;
@@ -12746,10 +12747,8 @@ begin
   result := S;
 end;
 
-procedure TfmIndex.tsBibliaShow(Sender: TObject);
+procedure TfmIndex.inicializaBiblia;
 begin
-  PaginaMenuAtiva(bsConfBiblia,tsBiblia);
-  marcaAbaAberta(tsBiblia);
   if (loadCol.Strings.Values['BIBLIA_F'] <> 'okf') then
   begin
     lmdBibliaTxt.Caption := '';
@@ -12840,6 +12839,13 @@ begin
     carregaConfiguracoes('BIBLIA');
   end;
 
+end;
+
+procedure TfmIndex.tsBibliaShow(Sender: TObject);
+begin
+  PaginaMenuAtiva(bsConfBiblia,tsBiblia);
+  marcaAbaAberta(tsBiblia);
+  inicializaBiblia;
 end;
 
 procedure TfmIndex.miOpcExportar1Click(Sender: TObject);

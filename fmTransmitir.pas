@@ -148,6 +148,15 @@ type
     procedure v2SearchSongs(ARequestInfo: TIdHTTPRequestInfo;
       AResponseInfo: TIdHTTPResponseInfo; const acao: string);
 
+    // Bíblia
+    procedure v2Bible(ARequestInfo: TIdHTTPRequestInfo;
+      AResponseInfo: TIdHTTPResponseInfo; const acao: string);
+    procedure v2BibleExibe(ARequestInfo: TIdHTTPRequestInfo;
+      AResponseInfo: TIdHTTPResponseInfo; const acao: string);
+    procedure v2BibleNavega(AResponseInfo: TIdHTTPResponseInfo;
+      const acao, acaoPedida: string);
+    function versaoBiblia: string;
+
     // Liturgia
     procedure v2Liturgy(ARequestInfo: TIdHTTPRequestInfo;
       AResponseInfo: TIdHTTPResponseInfo; const acao: string);
@@ -1915,6 +1924,354 @@ begin
 end;
 
 {
+  Versão bíblica em uso.
+
+  Enquanto a aba não foi aberta o estado em memória está vazio, e vale o que
+  está gravado nas opções. Num programa que nunca exibiu a bíblia nem isso
+  existe - e sem versão as consultas de capítulo e versículo voltam vazias.
+  Por isso, em último caso, usa-se a primeira versão instalada.
+
+  Deve rodar na thread da interface.
+}
+function TfTransmitir.versaoBiblia: string;
+var
+  consulta: TFDQuery;
+begin
+  Result := Trim(fmIndex.loadCol.Strings.Values['BIBLIA_VERSAO']);
+  if (Result <> '') then
+    Exit;
+
+  Result := Trim(fmIndex.lerParam('Biblia', 'Versão', ''));
+  if (Result <> '') then
+    Exit;
+
+  consulta := TFDQuery.Create(nil);
+  try
+    consulta.Connection := DM.ADO;
+    consulta.SQL.Text :=
+      'SELECT SIGLA FROM VERSAO_BIBLICA ORDER BY VERSAO LIMIT 1';
+    consulta.Open;
+    if not consulta.IsEmpty then
+      Result := Trim(consulta.FieldByName('SIGLA').AsString);
+  finally
+    consulta.Free;
+  end;
+end;
+
+{
+  Bíblia.
+
+  As listagens saem direto do banco, sem passar pelas consultas da tela: assim
+  consultar pela API não depende de a aba ter sido aberta, e não mexe no que o
+  operador está vendo. Exibir um versículo, ao contrário, percorre a mesma
+  cadeia de cliques do programa.
+}
+procedure TfTransmitir.v2Bible(ARequestInfo: TIdHTTPRequestInfo;
+  AResponseInfo: TIdHTTPResponseInfo; const acao: string);
+var
+  acaoPedida, versao, dados, sql: string;
+  livro, capitulo: Integer;
+begin
+  acaoPedida := v2Acao(ARequestInfo);
+
+  if (acaoPedida = 'show') then
+  begin
+    if not v2ExigeMetodo(ARequestInfo, AResponseInfo, acao, 'POST') then
+      Exit;
+    v2BibleExibe(ARequestInfo, AResponseInfo, acao);
+    Exit;
+  end;
+
+  if (acaoPedida = 'next') or (acaoPedida = 'previous') then
+  begin
+    if not v2ExigeMetodo(ARequestInfo, AResponseInfo, acao, 'POST') then
+      Exit;
+    v2BibleNavega(AResponseInfo, acao, acaoPedida);
+    Exit;
+  end;
+
+  if (acaoPedida <> 'status') and (acaoPedida <> 'versions') and
+     (acaoPedida <> 'books') and (acaoPedida <> 'chapters') and
+     (acaoPedida <> 'verses') then
+  begin
+    respondeV2AcaoInvalida(AResponseInfo, acao,
+      'status, versions, books, chapters, verses (GET); ' +
+      'show, next, previous (POST)');
+    Exit;
+  end;
+
+  if not v2ExigeMetodo(ARequestInfo, AResponseInfo, acao, 'GET') then
+    Exit;
+
+  livro := StrToIntDef(Trim(v2Param(ARequestInfo, 'book')), 0);
+  capitulo := StrToIntDef(Trim(v2Param(ARequestInfo, 'chapter')), 0);
+  versao := Trim(v2Param(ARequestInfo, 'version'));
+
+  if (acaoPedida = 'chapters') and (livro <= 0) then
+  begin
+    respondeV2Erro(AResponseInfo, 400, acao, 'MISSING_BOOK',
+      'Informe em book o código do livro, obtido em action=books');
+    Exit;
+  end;
+
+  if (acaoPedida = 'verses') and ((livro <= 0) or (capitulo <= 0)) then
+  begin
+    respondeV2Erro(AResponseInfo, 400, acao, 'MISSING_CHAPTER',
+      'Informe book e chapter');
+    Exit;
+  end;
+
+  dados := '';
+
+  if not executaNaInterface(
+    procedure
+    var
+      consulta: TFDQuery;
+      lista: string;
+    begin
+      if (versao = '') then
+        versao := versaoBiblia;
+
+      if (acaoPedida = 'status') then
+      begin
+        dados :=
+          '"version":"' + escapaJson(versaoBiblia) + '"' +
+          ',"book":' + StrToIntDef(fmIndex.loadCol.Strings.Values['BIBLIA_LIVRO'], 0).ToString +
+          ',"book_name":"' + escapaJson(fmIndex.loadCol.Strings.Values['BIBLIA_LIVRO_NOME']) + '"' +
+          ',"chapter":' + StrToIntDef(fmIndex.loadCol.Strings.Values['BIBLIA_CAPITULO'], 0).ToString +
+          ',"verse":' + StrToIntDef(fmIndex.loadCol.Strings.Values['BIBLIA_VERSICULO'], 0).ToString +
+          ',"text":"' + escapaJson(fmIndex.lmdBibliaTxt.Caption) + '"' +
+          ',"reference":"' + escapaJson(fmIndex.lmdBibliaInfo.Caption) + '"' +
+          //Enquanto a aba não foi aberta o programa ainda não escolheu versão
+          ',"ready":' + IfThen(
+            fmIndex.loadCol.Strings.Values['BIBLIA_F'] = 'okf', 'true', 'false');
+        Exit;
+      end;
+
+      if (acaoPedida = 'versions') then
+        //A tabela guarda o código em SIGLA e o nome por extenso em VERSAO
+        sql := 'SELECT SIGLA, VERSAO FROM VERSAO_BIBLICA ORDER BY VERSAO'
+      else if (acaoPedida = 'books') then
+        sql := 'SELECT ID, LIVRO, SIGLA, CAPITULOS FROM LIVRO ORDER BY ID'
+      else if (acaoPedida = 'chapters') then
+        sql := 'SELECT DISTINCT CAPITULO FROM BIBLIA' +
+               ' WHERE LIVRO = :LIVRO AND VERSAO = :VERSAO ORDER BY CAPITULO'
+      else
+        //A coluna é PASSAGEM; PASSAGEM_ORI é apelido que a consulta da tela
+        //cria, e não existe na tabela
+        sql := 'SELECT VERSICULO, PASSAGEM FROM BIBLIA' +
+               ' WHERE LIVRO = :LIVRO AND VERSAO = :VERSAO AND CAPITULO = :CAPITULO' +
+               ' ORDER BY VERSICULO';
+
+      lista := '';
+      consulta := TFDQuery.Create(nil);
+      try
+        consulta.Connection := DM.ADO;
+        consulta.SQL.Text := sql;
+        if (consulta.Params.FindParam('LIVRO') <> nil) then
+          consulta.ParamByName('LIVRO').AsInteger := livro;
+        if (consulta.Params.FindParam('VERSAO') <> nil) then
+          consulta.ParamByName('VERSAO').AsString := versao;
+        if (consulta.Params.FindParam('CAPITULO') <> nil) then
+          consulta.ParamByName('CAPITULO').AsInteger := capitulo;
+        consulta.Open;
+
+        while not consulta.Eof do
+        begin
+          if (lista <> '') then
+            lista := lista + ',';
+
+          if (acaoPedida = 'versions') then
+            lista := lista +
+              '{"sigla":"' + escapaJson(consulta.FieldByName('SIGLA').AsString) + '"' +
+              ',"nome":"' + escapaJson(consulta.FieldByName('VERSAO').AsString) + '"}'
+          else if (acaoPedida = 'books') then
+            lista := lista +
+              '{"id":' + consulta.FieldByName('ID').AsString +
+              ',"nome":"' + escapaJson(consulta.FieldByName('LIVRO').AsString) + '"' +
+              ',"sigla":"' + escapaJson(consulta.FieldByName('SIGLA').AsString) + '"' +
+              ',"capitulos":' + consulta.FieldByName('CAPITULOS').AsString + '}'
+          else if (acaoPedida = 'chapters') then
+            lista := lista + consulta.FieldByName('CAPITULO').AsString
+          else
+            lista := lista +
+              '{"versiculo":' + consulta.FieldByName('VERSICULO').AsString +
+              ',"texto":"' + escapaJson(
+                fmIndex.removeTagsHTML(consulta.FieldByName('PASSAGEM').AsString)) + '"}';
+
+          consulta.Next;
+        end;
+      finally
+        consulta.Free;
+      end;
+
+      dados := '"version":"' + escapaJson(versao) + '",';
+      if (acaoPedida = 'versions') then
+        dados := dados + '"versions":[' + lista + ']'
+      else if (acaoPedida = 'books') then
+        dados := dados + '"books":[' + lista + ']'
+      else if (acaoPedida = 'chapters') then
+        dados := dados + '"book":' + IntToStr(livro) + ',"chapters":[' + lista + ']'
+      else
+        dados := dados + '"book":' + IntToStr(livro) +
+          ',"chapter":' + IntToStr(capitulo) + ',"verses":[' + lista + ']';
+    end, TIMEOUT_INTERFACE) then
+  begin
+    respondeV2Ocupado(AResponseInfo, acao);
+    Exit;
+  end;
+
+  respondeV2Ok(AResponseInfo, acao, 'BIBLE_' + UpperCase(acaoPedida), '', dados);
+end;
+
+{
+  Exibe um versículo.
+
+  Percorre a mesma cadeia de cliques que o operador dispara na tela, para não
+  existir uma segunda versão da lógica: o clique no livro carrega os capítulos,
+  o clique no capítulo carrega os versículos, e o clique no versículo é quem
+  projeta, grava as opções e alimenta o histórico.
+
+  Antes disso o estado da bíblia precisa existir: sem inicializar, o programa
+  ainda não escolheu versão nem livro, e as consultas voltariam vazias.
+}
+procedure TfTransmitir.v2BibleExibe(ARequestInfo: TIdHTTPRequestInfo;
+  AResponseInfo: TIdHTTPResponseInfo; const acao: string);
+var
+  livro, capitulo, versiculo: Integer;
+  achouLivro, achouCap, achouVers: Boolean;
+  referencia, texto: string;
+begin
+  livro := StrToIntDef(Trim(v2Param(ARequestInfo, 'book')), 0);
+  capitulo := StrToIntDef(Trim(v2Param(ARequestInfo, 'chapter')), 0);
+  versiculo := StrToIntDef(Trim(v2Param(ARequestInfo, 'verse')), 1);
+
+  if (livro <= 0) or (capitulo <= 0) or (versiculo <= 0) then
+  begin
+    respondeV2Erro(AResponseInfo, 400, acao, 'INVALID_REFERENCE',
+      'Informe book, chapter e verse com números maiores que zero');
+    Exit;
+  end;
+
+  achouLivro := False;
+  achouCap := False;
+  achouVers := False;
+  referencia := '';
+  texto := '';
+
+  if not executaNaInterface(
+    procedure
+    begin
+      if (fmIndex.loadCol.Strings.Values['BIBLIA_F'] <> 'okf') then
+        //Só o estado: tsBibliaShow também troca a aba visível do programa, e
+        //a API não deve mexer no que o operador está vendo
+        fmIndex.inicializaBiblia;
+
+      fmIndex.carregaBiblia('LIV');
+      achouLivro := DM.qrBIBLIA_LIVROS.Locate('ID', livro, []);
+      if not achouLivro then
+        Exit;
+
+      //O clique no livro já carrega os capítulos e clica no capítulo indicado
+      fmIndex.loadCol.Strings.Values['BIBLIA_CAPITULO'] := IntToStr(capitulo);
+      fmIndex.DBCtrlGridBibliaLivroClick(nil);
+
+      achouCap := DM.qrBIBLIA_CAPITULOS.Locate('CAPITULO', capitulo, []);
+      if not achouCap then
+        Exit;
+
+      achouVers := DM.qrBIBLIA_VERSICULOS.Locate('VERSICULO', versiculo, []);
+      if not achouVers then
+        Exit;
+
+      fmIndex.DBCtrlGridBibliaVersiculoClick(nil);
+
+      referencia := fmIndex.lmdBibliaInfo.Caption;
+      texto := fmIndex.lmdBibliaTxt.Caption;
+    end, TIMEOUT_COMANDO) then
+  begin
+    respondeV2Ocupado(AResponseInfo, acao);
+    Exit;
+  end;
+
+  if not achouLivro then
+  begin
+    respondeV2Erro(AResponseInfo, 404, acao, 'BOOK_NOT_FOUND',
+      'Livro não encontrado');
+    Exit;
+  end;
+
+  if not achouCap then
+  begin
+    respondeV2Erro(AResponseInfo, 404, acao, 'CHAPTER_NOT_FOUND',
+      'Capítulo não encontrado neste livro');
+    Exit;
+  end;
+
+  if not achouVers then
+  begin
+    respondeV2Erro(AResponseInfo, 404, acao, 'VERSE_NOT_FOUND',
+      'Versículo não encontrado neste capítulo');
+    Exit;
+  end;
+
+  respondeV2Ok(AResponseInfo, acao, 'VERSE_SHOWN', '',
+    '"book":' + IntToStr(livro) +
+    ',"chapter":' + IntToStr(capitulo) +
+    ',"verse":' + IntToStr(versiculo) +
+    ',"reference":"' + escapaJson(referencia) + '"' +
+    ',"text":"' + escapaJson(texto) + '"');
+end;
+
+{
+  Versículo seguinte ou anterior, virando capítulo e livro quando chega ao fim.
+  São os mesmos botões da tela.
+}
+procedure TfTransmitir.v2BibleNavega(AResponseInfo: TIdHTTPResponseInfo;
+  const acao, acaoPedida: string);
+var
+  pronto: Boolean;
+  referencia, texto: string;
+begin
+  pronto := False;
+  referencia := '';
+  texto := '';
+
+  if not executaNaInterface(
+    procedure
+    begin
+      //Sem um versículo exibido antes não há de onde avançar
+      pronto := (fmIndex.loadCol.Strings.Values['BIBLIA_F'] = 'okf') and
+                (Trim(fmIndex.loadCol.Strings.Values['BIBLIA_P_VERSICULO']) <> '');
+      if not pronto then
+        Exit;
+
+      if (acaoPedida = 'next') then
+        fmIndex.btBibVersSegClick(nil)
+      else
+        fmIndex.btBibVersAntClick(nil);
+
+      referencia := fmIndex.lmdBibliaInfo.Caption;
+      texto := fmIndex.lmdBibliaTxt.Caption;
+    end, TIMEOUT_COMANDO) then
+  begin
+    respondeV2Ocupado(AResponseInfo, acao);
+    Exit;
+  end;
+
+  if not pronto then
+  begin
+    respondeV2Erro(AResponseInfo, 409, acao, 'NO_VERSE_SHOWN',
+      'Nenhum versículo exibido ainda. Use action=show primeiro.');
+    Exit;
+  end;
+
+  respondeV2Ok(AResponseInfo, acao, 'VERSE_SHOWN', '',
+    '"reference":"' + escapaJson(referencia) + '"' +
+    ',"text":"' + escapaJson(texto) + '"');
+end;
+
+{
   Liturgia: lista os itens do dia e abre um deles.
 
   A lista é lida direto do liturgia.ja, e não dos painéis da tela. Isso é
@@ -2856,6 +3213,12 @@ begin
   if SameText(rota, ROTA_V2 + '/search-songs') then
   begin
     v2SearchSongs(ARequestInfo, AResponseInfo, acao);
+    Exit;
+  end;
+
+  if SameText(rota, ROTA_V2 + '/bible') then
+  begin
+    v2Bible(ARequestInfo, AResponseInfo, acao);
     Exit;
   end;
 
