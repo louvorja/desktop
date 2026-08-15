@@ -148,6 +148,10 @@ type
     procedure v2SearchSongs(ARequestInfo: TIdHTTPRequestInfo;
       AResponseInfo: TIdHTTPResponseInfo; const acao: string);
 
+    // Documentação legível, servida a partir da pasta server
+    procedure v2Docs(ARequestInfo: TIdHTTPRequestInfo;
+      AResponseInfo: TIdHTTPResponseInfo; const acao: string);
+
     // Reprodução (player de arquivos)
     procedure v2Media(ARequestInfo: TIdHTTPRequestInfo;
       AResponseInfo: TIdHTTPResponseInfo; const acao: string);
@@ -199,7 +203,7 @@ implementation
 uses
   fmMusica, fmMenu, dmComponentes, fmMonitorSorteio, fmVideoOn, Vcl.MPlayer,
   System.SyncObjs,
-  System.StrUtils, IdURI, IdGlobal;
+  System.StrUtils, System.IOUtils, IdURI, IdGlobal;
 
 // ── Enumeração de interfaces de rede (iphlpapi) ─────────────────────────────
 
@@ -1933,6 +1937,48 @@ begin
 end;
 
 {
+  Documentação da API, em página legível.
+
+  É a única rota da v2 que não responde JSON, e isso é proposital: ela existe
+  para ser lida por gente, no navegador. O conteúdo mora em server/api-v2.html,
+  na pasta de configuração, junto com as demais páginas que o programa serve -
+  assim dá para corrigir um texto sem recompilar.
+}
+procedure TfTransmitir.v2Docs(ARequestInfo: TIdHTTPRequestInfo;
+  AResponseInfo: TIdHTTPResponseInfo; const acao: string);
+var
+  caminho, conteudo: string;
+begin
+  if not v2ExigeMetodo(ARequestInfo, AResponseInfo, acao, 'GET') then
+    Exit;
+
+  caminho := fmIndex.dir_config + 'server\api-v2.html';
+
+  if not FileExists(caminho) then
+  begin
+    respondeV2Erro(AResponseInfo, 404, acao, 'DOCS_NOT_FOUND',
+      'Documentação não encontrada. Copie api-v2.html para a pasta server.');
+    Exit;
+  end;
+
+  try
+    conteudo := TFile.ReadAllText(caminho, TEncoding.UTF8);
+  except
+    on E: Exception do
+    begin
+      respondeV2Erro(AResponseInfo, 500, acao, 'DOCS_READ_ERROR',
+        'Não foi possível ler a documentação: ' + E.Message);
+      Exit;
+    end;
+  end;
+
+  AResponseInfo.ContentType := 'text/html';
+  AResponseInfo.CharSet := 'utf-8';
+  AResponseInfo.ResponseNo := 200;
+  AResponseInfo.ContentText := conteudo;
+end;
+
+{
   Reprodução: expõe o painel de mídia do programa.
 
   O painel controla tanto o player de arquivos (MediaPlayer1, via MCI) quanto
@@ -3507,6 +3553,12 @@ end;
 procedure TfTransmitir.v2Despacha(ARequestInfo: TIdHTTPRequestInfo;
   AResponseInfo: TIdHTTPResponseInfo; const rota, acao: string);
 begin
+  if SameText(rota, ROTA_V2 + '/docs') then
+  begin
+    v2Docs(ARequestInfo, AResponseInfo, acao);
+    Exit;
+  end;
+
   if SameText(rota, ROTA_V2 + '/ping') then
   begin
     if not v2ExigeMetodo(ARequestInfo, AResponseInfo, acao, 'GET') then
