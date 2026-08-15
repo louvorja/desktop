@@ -417,6 +417,35 @@
 			}
 
 			/**
+			 * Aproveita o token que veio na URL e o remove do endereço.
+			 *
+			 * O programa gera o link do controle remoto já com o token, para
+			 * quem lê o QR Code entrar conectado. Uma vez guardado, ele sai da
+			 * barra de endereços: assim não fica à vista de quem estiver perto
+			 * da tela, nem no histórico, nem no cabeçalho Referer caso a página
+			 * aponte para fora.
+			 */
+			function aproveitarTokenDaURL() {
+				let token = "";
+				try {
+					token = new URLSearchParams(window.location.search).get('token') || "";
+				} catch (e) {
+					return;
+				}
+
+				if (token) {
+					salvarToken(token);
+				}
+
+				// Limpa a query sem recarregar a página. Só age quando havia
+				// algo para limpar, para não mexer no histórico à toa.
+				if (window.location.search && window.history.replaceState) {
+					window.history.replaceState({}, document.title,
+						window.location.pathname);
+				}
+			}
+
+			/**
 			 * Atualiza a exibição do token no footer
 			 */
 			function atualizarExibicaoToken() {
@@ -676,6 +705,9 @@
 			 * Inicializa o sistema
 			 */
 			function inicializar() {
+				// Antes de qualquer coisa: o token pode ter vindo no endereço
+				aproveitarTokenDaURL();
+
 				renderizarIcones();
 				atualizarExibicaoToken();
 
