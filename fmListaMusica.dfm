@@ -153,6 +153,33 @@ object fListaMusica: TfListaMusica
         Caption = 'pnlBotoes'
         ShowCaption = False
         TabOrder = 0
+        object lblDicaPB: TbsSkinStdLabel
+          Left = 0
+          Top = 0
+          Width = 232
+          Height = 32
+          EllipsType = bsetNone
+          UseSkinFont = False
+          UseSkinColor = False
+          DefaultFont.Charset = DEFAULT_CHARSET
+          DefaultFont.Color = clWhite
+          DefaultFont.Height = 13
+          DefaultFont.Name = 'Tahoma'
+          DefaultFont.Style = []
+          SkinDataName = 'stdlabel'
+          Font.Charset = DEFAULT_CHARSET
+          Font.Color = clWhite
+          Font.Height = -11
+          Font.Name = 'Tahoma'
+          Font.Style = []
+          Align = alLeft
+          Alignment = taLeftJustify
+          Caption = 'Arquivos terminados em "-PB" s'#227'o tratados como playback'
+          ParentFont = False
+          Layout = tlCenter
+          WordWrap = True
+          Visible = False
+        end
         object bsSkinSpeedButton6: TbsSkinSpeedButton
           AlignWithMargins = True
           Left = 416

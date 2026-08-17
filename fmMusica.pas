@@ -44,6 +44,8 @@ type
     procedure FormActivate(Sender: TObject);
     procedure acaoSlide(acao:string; setPosicao: Boolean = True; ac_album: Boolean = True);
     procedure acaoAlbum(acao:string);
+    procedure acaoArquivo(acao:string);
+    procedure defineFila(lista: TStringList; indice: Integer);
     procedure irSlide(num: integer);
     procedure slide(setPosicao: Boolean = True);
     procedure btGravaRClick(Sender: TObject);
@@ -90,6 +92,10 @@ type
     { Public declarations }
     musicaID,albumID: Integer;
     inicio: Boolean;
+    //Fila de arquivos de slides de uma coletânea personalizada. Vazia
+    //quando a exibição veio de album ou de arquivo avulso.
+    filaArquivos: TStringList;
+    filaIndice: Integer;
     audio: Boolean;
     fecharSlides,fecharSlidesRetorno: Boolean;
     tipo,param: string;
@@ -128,6 +134,58 @@ begin
   carregaMusica;
 end;
 
+{
+  Assume a fila de arquivos de uma coletânea personalizada.
+
+  A lista é copiada: quem chamou a libera logo em seguida.
+}
+procedure TfMusica.defineFila(lista: TStringList; indice: Integer);
+begin
+  if (filaArquivos = nil) then
+    filaArquivos := TStringList.Create;
+
+  filaArquivos.Assign(lista);
+  filaIndice := indice;
+end;
+
+{
+  Troca de arquivo dentro da fila, como acaoálbum faz dentro do álbum.
+
+  O .slja precisa ser extraído a cada troca, e o parâmetro de áudio vale por
+  arquivo - por isso passa de novo por preparaArquivoSlides.
+}
+procedure TfMusica.acaoArquivo(acao: string);
+var
+  pronto: string;
+  temAudio: Boolean;
+begin
+  if (filaArquivos = nil) then
+    Exit;
+
+  if (acao = 'prox') and (filaIndice < filaArquivos.Count - 1) then
+    Inc(filaIndice)
+  else if (acao = 'ant') and (filaIndice > 0) then
+    Dec(filaIndice)
+  else
+    Exit;
+
+  pronto := fmIndex.preparaArquivoSlides(filaArquivos[filaIndice], temAudio);
+  if (pronto = '') then
+    Exit;
+
+  if (audio) then
+  begin
+    BASS_MusicFree(bass_musica);
+    BASS_Free();
+  end;
+
+  uslide := -1;
+  tipo := 'EXT';
+  param := pronto;
+  audio := temAudio;
+  carregaMusica;
+end;
+
 procedure TfMusica.acaoSlide(acao: string;setPosicao: Boolean; ac_album: Boolean);
 var
   tempo,rec: integer;
@@ -143,6 +201,11 @@ begin
       acaoAlbum('ant');
       exit;
     end
+    else if (ac_album = true) and (filaArquivos <> nil) and (filaIndice > 0) then
+    begin
+      acaoArquivo('ant');
+      exit;
+    end
     else uslide := -1;
 //    else setPosicao := false;
   end;
@@ -153,6 +216,12 @@ begin
     if (ac_album = true) and (albumID > 0) and (DM.qrSLIDE_MUSICA_ALBUM.RecNo < DM.qrSLIDE_MUSICA_ALBUM.RecordCount) then
     begin
       acaoAlbum('prox');
+      exit;
+    end
+    else if (ac_album = true) and (filaArquivos <> nil) and
+            (filaIndice < filaArquivos.Count - 1) then
+    begin
+      acaoArquivo('prox');
       exit;
     end
     else setPosicao := false;
@@ -986,6 +1055,10 @@ procedure TfMusica.FormClose(Sender: TObject; var Action: TCloseAction);
 var
   i: integer;
 begin
+  //A fila só vale para esta exibição: some junto com a janela
+  FreeAndNil(filaArquivos);
+  filaIndice := 0;
+
   if (fTransmitir.btServidor.ImageIndex <> 8) then
   begin
      fmIndex.gravaParamServer('MUSICA', 'letra', '');

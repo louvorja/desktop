@@ -24,6 +24,7 @@ type
     bsSkinDBText2: TbsSkinDBText;
     Panel3: TPanel;
     pnlBotoes: TPanel;
+    lblDicaPB: TbsSkinStdLabel;
     bsSkinSpeedButton6: TbsSkinSpeedButton;
     btExp_MenuMusicas: TbsSkinMenuSpeedButton;
     bsPngImageView1: TbsPngImageView;
@@ -47,6 +48,7 @@ type
     procedure btExp_MenuMusicasShowTrackMenu(Sender: TObject);
   private
     { Private declarations }
+    procedure escondeBotoesItem;
   public
     { Public declarations }
     id_album: integer;
@@ -61,11 +63,15 @@ implementation
 
 {$R *.dfm}
 
-uses fmMenu, dmComponentes, fmMonitorMenuMusicas;
+uses fmMenu, dmComponentes, fmMonitorMenuMusicas, Data.DB;
 
 procedure TfListaMusica.bsSkinSpeedButton6Click(Sender: TObject);
 begin
-  fmIndex.abreLetraMusicaAlbum(DM.qrMUSICAS.FieldByName('ID_ALBUM').AsInteger);
+  //Coletanea personalizada: a fila e a pasta, nao um album do banco
+  if (DBCtrlGrid.DataSource <> DM.dsMUSICAS) then
+    fmIndex.abreSlidesPasta(dir)
+  else
+    fmIndex.abreLetraMusicaAlbum(DM.qrMUSICAS.FieldByName('ID_ALBUM').AsInteger);
 end;
 
 procedure TfListaMusica.btExp_MenuMusicasClick(Sender: TObject);
@@ -83,18 +89,73 @@ begin
 end;
 
 procedure TfListaMusica.DBCtrlGridClick(Sender: TObject);
+var
+  ds: TDataSet;
+  tag: integer;
 begin
-  if DBCtrlGrid.DataSource = DM.dsMUSICAS
-    then fmIndex.dbctrlMusicasClick(Sender)
-    else fmIndex.abrirArquivo(DBCtrlGrid.DataSource.DataSet.FieldByName('DIR').AsString);
+  if DBCtrlGrid.DataSource = DM.dsMUSICAS then
+  begin
+    fmIndex.dbctrlMusicasClick(Sender);
+    Exit;
+  end;
+
+  ds := DBCtrlGrid.DataSource.DataSet;
+  tag := TComponent(Sender).Tag;
+
+  // Fora dos pacotes de slides nao ha botao algum: o clique so pode ter vindo
+  // do corpo do item, que abre o arquivo como sempre abriu. No corpo de um
+  // pacote vale o mesmo, e DIR ja aponta para a versao cantada - ou para o
+  // playback, quando so ele existe.
+  if (tag < 1) or (tag > 5) or not ds.FieldByName('EH_SLIDE').AsBoolean
+    then fmIndex.abrirArquivo(ds.FieldByName('DIR').AsString)
+    else fmIndex.abreSlidesArquivo(ds.FieldByName('DIR').AsString,
+                                   ds.FieldByName('DIR_PB').AsString, tag);
 end;
 
 procedure TfListaMusica.DBCtrlGridPaintPanel(DBCtrlGrid: TDBCtrlGrid;
   Index: Integer);
+var
+  ds: TDataSet;
+  temPB, temAudio, temAudioPB: boolean;
 begin
-  if DBCtrlGrid.DataSource <> DM.dsMUSICAS then Exit;
+  if (DBCtrlGrid.DataSource = nil) or (DBCtrlGrid.DataSource.DataSet = nil) then
+    Exit;
 
-  if (DBCtrlGrid.DataSource.DataSet.FieldByName('URL_INSTRUMENTAL').AsString <> '') then
+  ds := DBCtrlGrid.DataSource.DataSet;
+
+  if DBCtrlGrid.DataSource <> DM.dsMUSICAS then
+  begin
+    // Coletanea personalizada: so os pacotes de slides tem o que oferecer.
+    // Qualquer outro arquivo segue sem botao nenhum, como sempre foi.
+    if not ds.FieldByName('EH_SLIDE').AsBoolean then
+    begin
+      escondeBotoesItem;
+      Exit;
+    end;
+
+    temPB := (ds.FieldByName('DIR_PB').AsString <> '');
+    temAudio := ds.FieldByName('TEM_AUDIO').AsBoolean;
+    temAudioPB := ds.FieldByName('TEM_AUDIO_PB').AsBoolean;
+
+    bsPngImageView1.Visible := True;
+    btSlideLetra.Visible := True;
+    btLetra.Visible := False;
+    btSlidePB.Visible := temPB;
+    // Sem faixa no pacote nao ha o que tocar sozinho
+    btMusica.Visible := temAudio;
+    btMusicaPB.Visible := temPB and temAudioPB;
+
+    if btSlidePB.Visible
+      then GridPanel2.ColumnCollection[4].Value := 40
+      else GridPanel2.ColumnCollection[4].Value := 0;
+    if btMusicaPB.Visible
+      then GridPanel2.ColumnCollection[7].Value := 40
+      else GridPanel2.ColumnCollection[7].Value := 0;
+
+    Exit;
+  end;
+
+  if (ds.FieldByName('URL_INSTRUMENTAL').AsString <> '') then
   begin
     btSlidePB.Visible := true;
     btMusicaPB.Visible := true;
@@ -110,11 +171,27 @@ begin
   end;
 end;
 
+procedure TfListaMusica.escondeBotoesItem;
+begin
+  bsPngImageView1.Visible := False;
+  btSlidePB.Visible := False;
+  btSlideLetra.Visible := False;
+  btMusica.Visible := False;
+  btMusicaPB.Visible := False;
+  btLetra.Visible := False;
+  GridPanel2.ColumnCollection[4].Value := 0;
+  GridPanel2.ColumnCollection[7].Value := 0;
+end;
+
 procedure TfListaMusica.FormActivate(Sender: TObject);
 var
   sr : TSearchRec;
   iRetorno : Integer;
   i: integer;
+  naoSlides, comCantado, semAudio: integer;
+  ext, nome, chave, arqCantado, arqPB: string;
+  ehPB, ehSlide, temAudio, temAudioPB: boolean;
+  ordem, dados: TStringList;
 begin
   if (inicio <> true) then
   begin
@@ -128,6 +205,11 @@ begin
     btMusica.Visible := (DBCtrlGrid.DataSource = DM.dsMUSICAS);
     btMusicaPB.Visible := (DBCtrlGrid.DataSource = DM.dsMUSICAS);
     btLetra.Visible := (DBCtrlGrid.DataSource = DM.dsMUSICAS);
+
+    // Na pasta estes so aparecem se o conteudo dela permitir
+    lblDicaPB.Visible := False;
+    bsSkinSpeedButton6.Visible := (DBCtrlGrid.DataSource = DM.dsMUSICAS);
+    btExp_MenuMusicas.Visible := (DBCtrlGrid.DataSource = DM.dsMUSICAS);
 
     if DBCtrlGrid.DataSource = DM.dsMUSICAS then
     begin
@@ -156,24 +238,118 @@ begin
       if not(DirectoryExists(dir)) then
         Exit;
 
-      iRetorno := FindFirst(dir + '*.*', faAnyFile, sr);
-      i := 0;
-      while iRetorno = 0 do
-      begin
-        if (sr.Name <> '.') and (sr.Name <> '..') then
-          if sr.Attr <> faDirectory then
+      naoSlides := 0;
+      comCantado := 0;
+      semAudio := 0;
+
+      // Cada entrada de "ordem" e uma musica da lista: a chave ordena e o
+      // objeto carrega o que foi encontrado para ela na pasta
+      //   [0] nome exibido  [1] arquivo cantado  [2] arquivo playback
+      ordem := TStringList.Create;
+      try
+        iRetorno := FindFirst(dir + '*.*', faAnyFile, sr);
+        try
+          while iRetorno = 0 do
           begin
-            i := i+1;
-            DM.cdsArquivos.Append;
-            DM.cdsArquivos.FieldByName('FAIXA').Value := i;
-            DM.cdsArquivos.FieldByName('NOME').Value := ChangeFileExt(sr.Name,'');
-            DM.cdsArquivos.FieldByName('DIR').Value := dir+sr.Name;
-            DM.cdsArquivos.Post;
+            if (sr.Name <> '.') and (sr.Name <> '..') and
+               (sr.Attr <> faDirectory) then
+            begin
+              ext := LowerCase(ExtractFileExt(sr.Name));
+              nome := Trim(ChangeFileExt(sr.Name, ''));
+              ehSlide := (ext = '.slja') or (ext = '.lja');
+
+              if ehSlide then
+              begin
+                // Cantado e playback sao dois arquivos, mas uma musica so na
+                // lista. O sufixo de playback e reconhecido pelo fmMenu, que
+                // devolve o nome sem ele; o pareamento vale ainda que as
+                // extensoes dos dois sejam diferentes.
+                ehPB := fmIndex.ehNomePlayback(nome);
+                chave := LowerCase(nome);
+              end
+              else
+              begin
+                // Arquivo comum nao pareia com nada; entra como item avulso
+                ehPB := False;
+                chave := LowerCase(sr.Name);
+              end;
+
+              i := ordem.IndexOf(chave);
+              if (i < 0) or not ehSlide then
+              begin
+                dados := TStringList.Create;
+                // A primeira grafia encontrada e a que aparece na lista
+                dados.Add(nome);
+                dados.Add('');
+                dados.Add('');
+                if ehSlide then dados.Add('1') else dados.Add('0');
+                i := ordem.AddObject(chave, dados);
+              end;
+
+              dados := TStringList(ordem.Objects[i]);
+              if ehPB
+                then dados[2] := dir + sr.Name
+                else dados[1] := dir + sr.Name;
+
+              if not ehSlide then
+                Inc(naoSlides);
+            end;
+            iRetorno := FindNext(sr);
           end;
-          iRetorno := FindNext(sr);
+        finally
+          FindClose(sr);
+        end;
+
+        ordem.Sort;
+
+        for i := 0 to ordem.Count - 1 do
+        begin
+          dados := TStringList(ordem.Objects[i]);
+          ehSlide := (dados[3] = '1');
+          arqCantado := dados[1];
+          arqPB := dados[2];
+
+          // Um pacote sem musica, ou com a musica desligada nas opcoes, se
+          // comporta como se fosse so letra: nada toca
+          temAudio := (arqCantado <> '') and fmIndex.slidesTemAudio(arqCantado);
+          temAudioPB := (arqPB <> '') and fmIndex.slidesTemAudio(arqPB);
+
+          if (arqCantado <> '') then
+          begin
+            Inc(comCantado);
+            if not temAudio then
+              Inc(semAudio);
+          end;
+
+          DM.cdsArquivos.Append;
+          DM.cdsArquivos.FieldByName('FAIXA').Value := i + 1;
+          DM.cdsArquivos.FieldByName('NOME').Value := dados[0];
+          // Sem versao cantada, o corpo do item abre o playback
+          if (arqCantado <> '')
+            then DM.cdsArquivos.FieldByName('DIR').Value := arqCantado
+            else DM.cdsArquivos.FieldByName('DIR').Value := arqPB;
+          DM.cdsArquivos.FieldByName('DIR_PB').Value := arqPB;
+          DM.cdsArquivos.FieldByName('TEM_AUDIO').Value := temAudio;
+          DM.cdsArquivos.FieldByName('TEM_AUDIO_PB').Value := temAudioPB;
+          DM.cdsArquivos.FieldByName('EH_SLIDE').Value := ehSlide;
+          DM.cdsArquivos.Post;
+        end;
+      finally
+        for i := 0 to ordem.Count - 1 do
+          ordem.Objects[i].Free;
+        ordem.Free;
       end;
-      FindClose(sr);
+
       DM.cdsArquivos.First;
+
+      // Reproduzir todas encadeia as versoes cantadas de uma pasta so de
+      // slides. Fica escondido quando ha arquivo de outro tipo, quando algum
+      // item nao toca audio (a fila pararia nele) ou quando nao ha nenhuma
+      // versao cantada para tocar.
+      bsSkinSpeedButton6.Visible := (naoSlides = 0) and (semAudio = 0) and
+                                    (comCantado > 0);
+      // O -PB e uma convencao de nome, entao precisa estar dita em algum lugar
+      lblDicaPB.Visible := (naoSlides = 0) and (DM.cdsArquivos.RecordCount > 0);
       DBCtrlGrid.Visible := True;
     end;
 
