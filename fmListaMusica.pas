@@ -48,7 +48,15 @@ type
     procedure btExp_MenuMusicasShowTrackMenu(Sender: TObject);
   private
     { Private declarations }
-    procedure escondeBotoesItem;
+    // Estado da linha ativa, guardado enquanto o painel dela e pintado
+    ativoConhecido, ativoSlide, ativoPB, ativoAudio, ativoAudioPB,
+    ativoLetra: boolean;
+    reaplicando: boolean;
+    wpGrid: TWndMethod;
+    procedure aplicaBotoesItem(slide, temPB, temAudio, temAudioPB,
+      temLetra: boolean);
+    procedure restauraLinhaAtiva;
+    procedure gridWindowProc(var Message: TMessage);
   public
     { Public declarations }
     id_album: integer;
@@ -112,75 +120,116 @@ begin
                                    ds.FieldByName('DIR_PB').AsString, tag);
 end;
 
+{
+  Configura os botoes do item para um registro.
+
+  Os botoes sao um jogo unico, compartilhado por todas as linhas: o grid
+  reconfigura e redesenha esse mesmo jogo uma vez por linha. Por isso tudo o
+  que distingue uma linha da outra passa por aqui.
+}
+procedure TfListaMusica.aplicaBotoesItem(slide, temPB, temAudio, temAudioPB,
+  temLetra: boolean);
+begin
+  bsPngImageView1.Visible := slide;
+  btSlideLetra.Visible := slide;
+  btLetra.Visible := slide and temLetra;
+  btSlidePB.Visible := slide and temPB;
+  // Sem faixa no pacote nao ha o que tocar sozinho
+  btMusica.Visible := slide and temAudio;
+  btMusicaPB.Visible := slide and temPB and temAudioPB;
+
+  if btSlidePB.Visible
+    then GridPanel2.ColumnCollection[4].Value := 40
+    else GridPanel2.ColumnCollection[4].Value := 0;
+  if btMusicaPB.Visible
+    then GridPanel2.ColumnCollection[7].Value := 40
+    else GridPanel2.ColumnCollection[7].Value := 0;
+end;
+
+{
+  Reaplica na linha ativa o estado que e dela.
+
+  Na linha ativa os botoes nao sao pixels ja gravados: sao as janelas reais,
+  sobrepostas ao painel. O grid desenha uma linha de cada vez reconfigurando
+  esse mesmo jogo de botoes, entao ao fim da passada eles ficam com o estado do
+  ultimo registro desenhado - e era isso que a linha ativa exibia.
+
+  Tem de ser depois da passada inteira: dentro do OnPaintPanel os controles
+  filhos daquela linha ainda nao foram desenhados, e mexer neles ali estraga o
+  desenho da propria linha.
+}
+procedure TfListaMusica.restauraLinhaAtiva;
+begin
+  if not ativoConhecido or reaplicando then
+    Exit;
+
+  reaplicando := True;
+  try
+    aplicaBotoesItem(ativoSlide, ativoPB, ativoAudio, ativoAudioPB, ativoLetra);
+  finally
+    reaplicando := False;
+  end;
+end;
+
+{
+  O WM_PAINT do grid so retorna depois de desenhados todos os paineis, entao e
+  aqui que da para deixar os botoes como a linha ativa pede.
+
+  Sendo sincrono, tambem acerta o clique: WMLButtonDown chama SetPanelIndex, que
+  repinta o grid na hora, e so entao usa WindowFromPoint para saber em que botao
+  o usuario clicou. Com o layout do registro anterior as colunas de playback
+  deslocavam os botoes em 40px e o clique caia no vizinho.
+}
+procedure TfListaMusica.gridWindowProc(var Message: TMessage);
+begin
+  wpGrid(Message);
+  if (Message.Msg = WM_PAINT) then
+    restauraLinhaAtiva;
+end;
+
 procedure TfListaMusica.DBCtrlGridPaintPanel(DBCtrlGrid: TDBCtrlGrid;
   Index: Integer);
 var
   ds: TDataSet;
-  temPB, temAudio, temAudioPB: boolean;
+  slide, temPB, temAudio, temAudioPB, temLetra: boolean;
 begin
   if (DBCtrlGrid.DataSource = nil) or (DBCtrlGrid.DataSource.DataSet = nil) then
     Exit;
 
   ds := DBCtrlGrid.DataSource.DataSet;
 
-  if DBCtrlGrid.DataSource <> DM.dsMUSICAS then
+  if (DBCtrlGrid.DataSource = DM.dsMUSICAS) then
   begin
-    // Coletanea personalizada: so os pacotes de slides tem o que oferecer.
-    // Qualquer outro arquivo segue sem botao nenhum, como sempre foi.
-    if not ds.FieldByName('EH_SLIDE').AsBoolean then
-    begin
-      escondeBotoesItem;
-      Exit;
-    end;
-
-    temPB := (ds.FieldByName('DIR_PB').AsString <> '');
-    temAudio := ds.FieldByName('TEM_AUDIO').AsBoolean;
-    temAudioPB := ds.FieldByName('TEM_AUDIO_PB').AsBoolean;
-
-    bsPngImageView1.Visible := True;
-    btSlideLetra.Visible := True;
-    btLetra.Visible := False;
-    btSlidePB.Visible := temPB;
-    // Sem faixa no pacote nao ha o que tocar sozinho
-    btMusica.Visible := temAudio;
-    btMusicaPB.Visible := temPB and temAudioPB;
-
-    if btSlidePB.Visible
-      then GridPanel2.ColumnCollection[4].Value := 40
-      else GridPanel2.ColumnCollection[4].Value := 0;
-    if btMusicaPB.Visible
-      then GridPanel2.ColumnCollection[7].Value := 40
-      else GridPanel2.ColumnCollection[7].Value := 0;
-
-    Exit;
-  end;
-
-  if (ds.FieldByName('URL_INSTRUMENTAL').AsString <> '') then
-  begin
-    btSlidePB.Visible := true;
-    btMusicaPB.Visible := true;
-    GridPanel2.ColumnCollection[4].Value := 40;
-    GridPanel2.ColumnCollection[7].Value := 40;
+    slide := True;
+    temPB := (ds.FieldByName('URL_INSTRUMENTAL').AsString <> '');
+    temAudio := True;
+    temAudioPB := temPB;
+    temLetra := True;
   end
   else
   begin
-    btSlidePB.Visible := false;
-    btMusicaPB.Visible := false;
-    GridPanel2.ColumnCollection[4].Value := 0;
-    GridPanel2.ColumnCollection[7].Value := 0;
+    // Coletanea personalizada: so os pacotes de slides tem o que oferecer.
+    // Qualquer outro arquivo segue sem botao nenhum, como sempre foi.
+    slide := ds.FieldByName('EH_SLIDE').AsBoolean;
+    temPB := ds.FieldByName('DIR_PB').AsString <> '';
+    temAudio := ds.FieldByName('TEM_AUDIO').AsBoolean;
+    temAudioPB := ds.FieldByName('TEM_AUDIO_PB').AsBoolean;
+    // A letra sozinha nao entra nas personalizadas: exigiria outro form
+    temLetra := False;
   end;
-end;
 
-procedure TfListaMusica.escondeBotoesItem;
-begin
-  bsPngImageView1.Visible := False;
-  btSlidePB.Visible := False;
-  btSlideLetra.Visible := False;
-  btMusica.Visible := False;
-  btMusicaPB.Visible := False;
-  btLetra.Visible := False;
-  GridPanel2.ColumnCollection[4].Value := 0;
-  GridPanel2.ColumnCollection[7].Value := 0;
+  aplicaBotoesItem(slide, temPB, temAudio, temAudioPB, temLetra);
+
+  // Guarda o que a linha ativa pede; restauraLinhaAtiva devolve isso ao fim
+  if (Index = DBCtrlGrid.PanelIndex) then
+  begin
+    ativoSlide := slide;
+    ativoPB := temPB;
+    ativoAudio := temAudio;
+    ativoAudioPB := temAudioPB;
+    ativoLetra := temLetra;
+    ativoConhecido := True;
+  end;
 end;
 
 procedure TfListaMusica.FormActivate(Sender: TObject);
@@ -198,6 +247,11 @@ begin
     inicio := True;
 
     fmIndex.monitor_bt_label(btExp_MenuMusicas);
+
+    // O WM_PAINT do grid so termina depois de desenhados todos os paineis:
+    // e de la que a linha ativa recupera o estado que e dela
+    wpGrid := DBCtrlGrid.WindowProc;
+    DBCtrlGrid.WindowProc := gridWindowProc;
 
     bsPngImageView1.Visible := (DBCtrlGrid.DataSource = DM.dsMUSICAS);
     btSlidePB.Visible := (DBCtrlGrid.DataSource = DM.dsMUSICAS);
