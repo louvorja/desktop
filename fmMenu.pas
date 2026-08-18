@@ -1849,7 +1849,8 @@ type
     procedure bsSkinButton15Click(Sender: TObject);
     procedure DBGridDrawColumnCell(Sender: TObject; const Rect: TRect; DataCol: Integer; Column: TbsColumn; State: TGridDrawState);
     procedure AjustaLarguraCamposDBGrid(DBGrid: TbsSkinDbGrid);
-    procedure abrirArquivo(url: string;externo: Boolean = false);
+    procedure abrirArquivo(url: string;externo: Boolean = false;
+      sairSeInvalido: Boolean = false);
     procedure bsSkinSpeedButton46Click(Sender: TObject);
     procedure bsRibbon1Buttons3Click(Sender: TObject);
     procedure ExcluirTodas1Click(Sender: TObject);
@@ -2009,7 +2010,7 @@ type
     procedure ckSlideTxtFormatPersoClick(Sender: TObject);
     procedure seSorteioTempoChange(Sender: TObject);
     function diretorio(dir:string):string;
-    procedure processaArquivo(arq: string);
+    procedure processaArquivo(arq: string; sairSeInvalido: Boolean = false);
     procedure ExportarMusicaClick(Sender: TObject);
     procedure miOpcExportar1Click(Sender: TObject);
     procedure exportarMusica(id:integer;audio:boolean;nome:string = '';param:string = '');
@@ -3596,7 +3597,8 @@ begin
   DM.tmrPlayer.Enabled := True;
 end;
 
-procedure TfmIndex.abrirArquivo(url: string;externo: Boolean);
+procedure TfmIndex.abrirArquivo(url: string;externo: Boolean;
+  sairSeInvalido: Boolean);
 var
   ext: string;
 begin
@@ -3607,7 +3609,7 @@ begin
     if externo
       then ShellExecute(handle, nil, PChar(url), nil, nil, SW_MAXIMIZE)
     else if (ext = '.slja') or (ext = '.lja')
-      then processaArquivo(url)
+      then processaArquivo(url, sairSeInvalido)
     else if (ckPlayerAudio.Checked)
       and ((ext = '.mp3') or (ext = '.wma') or (ext = '.wav')) then
     begin
@@ -4818,7 +4820,9 @@ begin
     and (Message.Msg = WM_LOUVORJA_ABRE_ARQUIVO)
     and (Trim(arquivo_recebido) <> '') then
   begin
-    //Mesmo caminho usado pelos itens da liturgia
+    //Mesmo caminho usado pelos itens da liturgia. O programa já estava aberto
+    //quando o arquivo chegou, então um arquivo inválido apenas avisa: encerrar
+    //aqui derrubaria a sessão que o usuário já tinha em andamento
     abrirArquivo(arquivo_recebido);
     arquivo_recebido := '';
     Exit;
@@ -13669,7 +13673,10 @@ begin
 
   pronto := preparaArquivoSlides(alvo, audio);
   if (pronto = '') then
+  begin
+    application.MessageBox(PChar('Arquivo "'+alvo+'" inválido!'), titulo, mb_ok + mb_iconerror);
     Exit;
+  end;
 
   //O botão "sem áudio" mostra os mesmos slides, só que sem tocar a faixa
   if (tag = 3) then
@@ -13704,15 +13711,27 @@ begin
     ZipFile := TZipFile.Create;
     try
       dir_t := dir_temp+'~read_'+FormatDateTime('yyyymmddHHMMSSZZZ', now());
-      ZipFile.Open(arq, zmRead);
-      ZipFile.ExtractAll(dir_t);
-      ZipFile.Close;
+      try
+        ZipFile.Open(arq, zmRead);
+        ZipFile.ExtractAll(dir_t);
+        ZipFile.Close;
+      except
+        //Pacote corrompido: para quem chamou vale como arquivo invalido
+        Exit;
+      end;
       arq := dir_t+'\slides.lja';
     finally
       ZipFile.Free;
     end;
+
+    //Um zip que abre mas nao traz os slides tambem nao serve. Sem esta
+    //conferencia o caminho inexistente seguia adiante e quebrava mais na frente
+    if not FileExists(arq) then
+      Exit;
   end
   else if (ext <> '.lja') then
+    Exit
+  else if not FileExists(arq) then
     Exit;
 
   audio := (lerParam('Geral', 'audio', '1', ExtractFileName(arq), ExtractFilePath(arq)) = '1');
@@ -13732,16 +13751,19 @@ end;
 }
 procedure TfmIndex.abreSlidesPasta(dir: string);
 var
-  arquivos: TStringList;
+  ordem, dados, arquivos: TStringList;
   sr: TSearchRec;
-  ret: Integer;
-  ext, nome, primeiro: string;
-  audio: Boolean;
+  ret, i: Integer;
+  ext, nome, chave, primeiro: string;
+  ehPB, audio: Boolean;
 begin
   dir := IncludeTrailingPathDelimiter(dir);
   if not DirectoryExists(dir) then
     Exit;
 
+  //Uma entrada por música, como na lista da tela: a chave ordena e o objeto
+  //guarda o que foi achado para ela  --  [0] cantado  [1] playback
+  ordem := TStringList.Create;
   arquivos := TStringList.Create;
   try
     ret := FindFirst(dir + '*.*', faAnyFile, sr);
@@ -13751,13 +13773,27 @@ begin
         if (sr.Name <> '.') and (sr.Name <> '..') and (sr.Attr <> faDirectory) then
         begin
           ext := LowerCase(ExtractFileExt(sr.Name));
-          nome := ChangeFileExt(sr.Name, '');
 
-          //A fila toca as versões cantadas; o playback fica de fora. Uma
-          //música que só tenha playback simplesmente não entra, sem precisar
-          //ser aberta para depois ser pulada.
-          if ((ext = '.slja') or (ext = '.lja')) and not ehNomePlayback(nome) then
-            arquivos.Add(dir + sr.Name);
+          if (ext = '.slja') or (ext = '.lja') then
+          begin
+            nome := Trim(ChangeFileExt(sr.Name, ''));
+            ehPB := ehNomePlayback(nome);
+            chave := LowerCase(nome);
+
+            i := ordem.IndexOf(chave);
+            if (i < 0) then
+            begin
+              dados := TStringList.Create;
+              dados.Add('');
+              dados.Add('');
+              i := ordem.AddObject(chave, dados);
+            end;
+
+            dados := TStringList(ordem.Objects[i]);
+            if ehPB
+              then dados[1] := dir + sr.Name
+              else dados[0] := dir + sr.Name;
+          end;
         end;
         ret := FindNext(sr);
       end;
@@ -13765,15 +13801,27 @@ begin
       FindClose(sr);
     end;
 
+    //Mesma ordem que a lista da tela apresenta
+    ordem.Sort;
+
+    for i := 0 to ordem.Count - 1 do
+    begin
+      dados := TStringList(ordem.Objects[i]);
+      //A cantada sempre se sobressai; o playback entra quando ela não existe
+      if (dados[0] <> '')
+        then arquivos.Add(dados[0])
+        else arquivos.Add(dados[1]);
+    end;
+
     if (arquivos.Count = 0) then
       Exit;
 
-    //Mesma ordem que a lista da tela apresenta
-    arquivos.Sort;
-
     primeiro := preparaArquivoSlides(arquivos[0], audio);
     if (primeiro = '') then
+    begin
+      application.MessageBox(PChar('Arquivo "'+arquivos[0]+'" inválido!'), titulo, mb_ok + mb_iconerror);
       Exit;
+    end;
 
     abreLetraMusica('EXT', primeiro, -1, audio);
 
@@ -13781,11 +13829,14 @@ begin
     if (fMusica <> nil) then
       fMusica.defineFila(arquivos, 0);
   finally
+    for i := 0 to ordem.Count - 1 do
+      ordem.Objects[i].Free;
+    ordem.Free;
     arquivos.Free;
   end;
 end;
 
-procedure TfmIndex.processaArquivo(arq: string);
+procedure TfmIndex.processaArquivo(arq: string; sairSeInvalido: Boolean);
 var
   audio: Boolean;
   pronto: string;
@@ -13797,7 +13848,11 @@ begin
   else
   begin
     Application.MessageBox(PChar('Arquivo "'+arq+'" inválido!'),TITULO,mb_ok+mb_iconerror);
-    DM.tmrSair.Enabled := True;
+
+    //Só encerra quando o programa foi acionado de fora para abrir este
+    //arquivo; aberto de dentro, um arquivo ruim não pode derrubar a sessão
+    if sairSeInvalido then
+      DM.tmrSair.Enabled := True;
   end;
 end;
 

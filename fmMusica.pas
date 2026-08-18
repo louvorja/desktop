@@ -162,16 +162,17 @@ begin
   if (filaArquivos = nil) then
     Exit;
 
-  if (acao = 'prox') and (filaIndice < filaArquivos.Count - 1) then
-    Inc(filaIndice)
-  else if (acao = 'ant') and (filaIndice > 0) then
-    Dec(filaIndice)
-  else
-    Exit;
+  //Um arquivo invalido nao pode parar a fila: segue procurando no mesmo sentido
+  repeat
+    if (acao = 'prox') and (filaIndice < filaArquivos.Count - 1) then
+      Inc(filaIndice)
+    else if (acao = 'ant') and (filaIndice > 0) then
+      Dec(filaIndice)
+    else
+      Exit;
 
-  pronto := fmIndex.preparaArquivoSlides(filaArquivos[filaIndice], temAudio);
-  if (pronto = '') then
-    Exit;
+    pronto := fmIndex.preparaArquivoSlides(filaArquivos[filaIndice], temAudio);
+  until (pronto <> '');
 
   if (audio) then
   begin
@@ -1530,9 +1531,14 @@ begin
     tmrTempo.Enabled := False;
     if not (pause) then
     begin
-      if (albumID > 0) and (DM.qrSLIDE_MUSICA_ALBUM.RecNo < DM.qrSLIDE_MUSICA_ALBUM.RecordCount)
-        then acaoAlbum('prox')
-        else close;
+      //Fim do audio: encadeia a proxima musica da fila. Album vem do banco;
+      //coletanea personalizada vem da lista de arquivos montada pelo fmIndex
+      if (albumID > 0) and (DM.qrSLIDE_MUSICA_ALBUM.RecNo < DM.qrSLIDE_MUSICA_ALBUM.RecordCount) then
+        acaoAlbum('prox')
+      else if (filaArquivos <> nil) and (filaIndice < filaArquivos.Count - 1) then
+        acaoArquivo('prox')
+      else
+        close;
     end;
   end;
 
