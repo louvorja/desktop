@@ -684,6 +684,8 @@ type
     bsSkinButton35: TbsSkinButton;
     bsSkinPanel65: TbsSkinPanel;
     ckMusicaTituloSlide: TbsSkinCheckBox;
+    ckMusicaNumeroHino: TbsSkinCheckBox;
+    bsSkinPanelNumHino: TbsSkinPanel;
     ampSincroniza: TbsAppMenuPage;
     bsSkinPanel66: TbsSkinPanel;
     bsSkinPanel67: TbsSkinPanel;
@@ -1979,6 +1981,7 @@ type
     procedure bsRibbon1Buttons5Click(Sender: TObject);
     procedure bsRibbon1Buttons0Click(Sender: TObject);
     procedure ckMusicaTituloSlideClick(Sender: TObject);
+    procedure ckMusicaNumeroHinoClick(Sender: TObject);
     procedure bsSkinButton38Click(Sender: TObject);
     procedure bsSkinButton36Click(Sender: TObject);
     procedure tabLetrasChange(Sender: TObject);
@@ -10656,6 +10659,14 @@ begin
     gravaParam('Musicas', 'TituloSlide', '1')
   else
     gravaParam('Musicas', 'TituloSlide', '0');
+end;
+
+procedure TfmIndex.ckMusicaNumeroHinoClick(Sender: TObject);
+begin
+  if ckMusicaNumeroHino.Checked then
+    gravaParam('Musicas', 'NumeroHino', '1')
+  else
+    gravaParam('Musicas', 'NumeroHino', '0');
 end;
 
 procedure TfmIndex.ckMusicaTopoClick(Sender: TObject);

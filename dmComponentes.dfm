@@ -161,6 +161,19 @@ object DM: TDM
         ParamType = ptInput
       end>
   end
+  object qrHINO_NUMERO: TFDQuery
+    Connection = ADO
+    SQL.Strings = (
+      'SELECT FAIXA FROM HINARIO_ADVENTISTA'
+      'WHERE ID = :ID')
+    Left = 280
+    Top = 336
+    ParamData = <
+      item
+        Name = 'ID'
+        ParamType = ptInput
+      end>
+  end
   object qrSEL_COLETANEAS_ID: TFDQuery
     Connection = ADO
     SQL.Strings = (
