@@ -37,21 +37,8 @@ begin
 end;
 
 procedure TfPlayer.FormClose(Sender: TObject; var Action: TCloseAction);
-var
-  i: integer;
 begin
-  if (fPlayer.AlphaBlendValue > 0) then
-  begin
-    if fmIndex.ckFadeForm.Checked then
-    begin
-      for i := fPlayer.AlphaBlendValue downto 0 do
-      begin
-        fPlayer.AlphaBlendValue := i;
-        sleep(1);
-      end;
-    end
-    else fPlayer.AlphaBlendValue := 0;
-  end;
+  fmIndex.fadeJanela(fPlayer, 0);
 
   try
     fmIndex.MediaPlayer1.Stop;
