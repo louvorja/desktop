@@ -53,11 +53,10 @@ begin
     else fPlayer.AlphaBlendValue := 0;
   end;
 
-  try
+  //Stop exige o device aberto; sem a guarda ele levanta EMCIDeviceError sempre
+  //que o Open falhou antes
+  if (fmIndex.MediaPlayer1.DeviceID <> 0) then
     fmIndex.MediaPlayer1.Stop;
-  except
-    //
-  end;
   fmIndex.MediaPlayer1.Close;
   fmIndex.MediaPlayer1.FileName := '';
   fmIndex.pnlPlayer.Visible := False;

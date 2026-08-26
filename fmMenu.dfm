@@ -36896,12 +36896,120 @@ object fmIndex: TfmIndex
                   Font.Name = 'Tahoma'
                   Font.Style = [fsBold]
                   Align = alLeft
-                  Caption = 
-                    'Nota: Se o '#225'udio/v'#237'deo n'#227'o for suportado pelo player, o arquivo ' +
-                    'ser'#225' automaticamente aberto.'
+                  Caption =
+                    #201' necess'#225'rio ter o Codec Pack Full instalado para execu'#231#227'o n' +
+                    'o player do programa'
                   ParentFont = False
                   Layout = tlCenter
                   ExplicitHeight = 13
+                end
+              end
+              object pnlInstalarCodecs: TbsSkinPanel
+                Left = 0
+                Top = 568
+                Width = 873
+                Height = 24
+                HintImageIndex = 0
+                TabOrder = 42
+                SkinData = DM.bsSkinData1
+                SkinDataName = 'panel'
+                DefaultFont.Charset = DEFAULT_CHARSET
+                DefaultFont.Color = clWindowText
+                DefaultFont.Height = 13
+                DefaultFont.Name = 'Tahoma'
+                DefaultFont.Style = []
+                DefaultWidth = 0
+                DefaultHeight = 0
+                UseSkinFont = True
+                EmptyDrawing = False
+                RibbonStyle = False
+                ImagePosition = bsipDefault
+                TransparentMode = False
+                CaptionImageIndex = 0
+                RealHeight = -1
+                AutoEnabledControls = True
+                CheckedMode = False
+                Checked = False
+                DefaultAlignment = taLeftJustify
+                DefaultCaptionHeight = 20
+                BorderStyle = bvNone
+                CaptionMode = False
+                RollUpMode = False
+                RollUpState = False
+                NumGlyphs = 1
+                Spacing = 2
+                Caption = 'bsSkinPanel10'
+                Align = alTop
+                object lblInstalarCodecs: TbsSkinStdLabel
+                  AlignWithMargins = True
+                  Left = 36
+                  Top = 0
+                  Width = 220
+                  Height = 24
+                  Margins.Left = 36
+                  Margins.Top = 0
+                  Margins.Right = 0
+                  Margins.Bottom = 0
+                  EllipsType = bsetNone
+                  UseSkinFont = True
+                  UseSkinColor = True
+                  DefaultFont.Charset = DEFAULT_CHARSET
+                  DefaultFont.Color = clWindowText
+                  DefaultFont.Height = -11
+                  DefaultFont.Name = 'Tahoma'
+                  DefaultFont.Style = []
+                  SkinData = DM.bsSkinData1
+                  SkinDataName = 'stdlabel'
+                  Font.Charset = ANSI_CHARSET
+                  Font.Color = clWindowText
+                  Font.Height = -13
+                  Font.Name = 'Tahoma'
+                  Font.Style = []
+                  Align = alLeft
+                  Caption = 'Instalar K-Lite Codec Pack Full'
+                  ParentFont = False
+                  Layout = tlCenter
+                  ExplicitHeight = 13
+                end
+                object btInstalarCodecs: TbsSkinButton
+                  AlignWithMargins = True
+                  Left = 266
+                  Top = 1
+                  Width = 190
+                  Height = 22
+                  Margins.Left = 10
+                  Margins.Top = 1
+                  Margins.Right = 0
+                  Margins.Bottom = 1
+                  HintImageIndex = 0
+                  TabOrder = 0
+                  SkinData = DM.bsSkinData1
+                  SkinDataName = 'button'
+                  DefaultFont.Charset = DEFAULT_CHARSET
+                  DefaultFont.Color = clWindowText
+                  DefaultFont.Height = 13
+                  DefaultFont.Name = 'Tahoma'
+                  DefaultFont.Style = []
+                  DefaultWidth = 0
+                  DefaultHeight = 0
+                  UseSkinFont = True
+                  Transparent = False
+                  CheckedMode = False
+                  AlwaysShowLayeredFrame = False
+                  UseSkinSize = True
+                  UseSkinFontColor = True
+                  RepeatMode = False
+                  RepeatInterval = 100
+                  AllowAllUp = False
+                  TabStop = True
+                  CanFocused = True
+                  Down = False
+                  GroupIndex = 0
+                  Caption = 'Abrir p'#225'gina para instala'#231#227'o'
+                  NumGlyphs = 1
+                  Spacing = 1
+                  Align = alLeft
+                  OnClick = btInstalarCodecsClick
                 end
               end
               object bsSkinPanel166: TbsSkinPanel
