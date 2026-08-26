@@ -412,10 +412,6 @@ begin
     fmIndex.carrega_opc := true;
   end;
 
-  //Carga das opcoes terminou: daqui em diante, marcar a caixa do player e um
-  //ato do operador, e nao atribuicao por codigo (que dispara o mesmo OnClick)
-  fmIndex.codecAvisoLiberado := True;
-
   fIniciando.Visible := False;
 
   if DM.tmrSair.Enabled = True then
