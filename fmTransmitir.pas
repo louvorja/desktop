@@ -88,6 +88,9 @@ type
     { Private declarations }
     tentativaConexao: Integer;
     function IsAllowedExternalSljaUrl(const AUrl: string): Boolean;
+    function IsAllowedLocalSljaPath(const APath: string): Boolean;
+    function ExternalCacheDir: string;
+    function CacheFileForUrl(const AUrl: string): string;
 
     // ====================================================================
     // API v2 - declarações
@@ -208,7 +211,7 @@ implementation
 
 uses
   fmMusica, fmMenu, fmQRCode, dmComponentes, fmMonitorSorteio, fmVideoOn, Vcl.MPlayer,
-  System.SyncObjs, System.StrUtils, System.IOUtils, IdURI, IdGlobal;
+  System.SyncObjs, System.StrUtils, System.IOUtils, System.Hash, IdURI, IdGlobal;
 
 // ── Enumeração de interfaces de rede (iphlpapi) ─────────────────────────────
 
@@ -659,6 +662,62 @@ begin
   Result := True;
 end;
 
+function TfTransmitir.IsAllowedLocalSljaPath(const APath: string): Boolean;
+var
+  ext: string;
+  expanded: string;
+begin
+  Result := False;
+  expanded := Trim(APath);
+  if expanded = '' then
+    Exit;
+
+  // Strip optional file:/// prefix from browsers
+  if expanded.StartsWith('file:///', True) then
+    Delete(expanded, 1, 8)
+  else if expanded.StartsWith('file://', True) then
+    Delete(expanded, 1, 7);
+
+  expanded := StringReplace(expanded, '/', '\', [rfReplaceAll]);
+  expanded := ExpandFileName(expanded);
+
+  // Must be an absolute Windows path (C:\... or \\server\share\...)
+  if (Length(expanded) < 3) then
+    Exit;
+  if not (
+      ((expanded[2] = ':') and (expanded[3] = '\')) or
+      expanded.StartsWith('\\')
+     ) then
+    Exit;
+
+  // Block obvious traversal leftovers after ExpandFileName
+  if Pos('\..\', expanded) > 0 then
+    Exit;
+
+  ext := LowerCase(ExtractFileExt(expanded));
+  if (ext <> '.slja') and (ext <> '.lja') then
+    Exit;
+
+  if not FileExists(expanded) then
+    Exit;
+
+  Result := True;
+end;
+
+function TfTransmitir.ExternalCacheDir: string;
+begin
+  Result := fmIndex.dir_temp + 'open_ext_cache\';
+  if not DirectoryExists(Result) then
+    ForceDirectories(Result);
+end;
+
+function TfTransmitir.CacheFileForUrl(const AUrl: string): string;
+begin
+  // Stable key so the same remote URL reuses the downloaded .slja
+  Result := ExternalCacheDir +
+    LowerCase(THashMD5.GetHashString(AUrl)) + '.slja';
+end;
+
 procedure TfTransmitir.IdHTTPServer1CommandGet(AContext: TIdContext;
   ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
 var
@@ -681,6 +740,9 @@ var
   jsonResult: String;
   primeiro: Boolean;
   externalUrl: string;
+  externalPath: string;
+  forceRefresh: Boolean;
+  openSource: string;
 begin
   // A v2 é atendida por um bloco próprio, no fim desta unit. Quando ela
   // responde, nada daqui para baixo é executado.
@@ -1072,17 +1134,69 @@ begin
       Exit;
     end;
 
-    // API: Download a remote LouvorJA presentation (.slja) and open it
-    // Usage: GET /api/open-external?url=https://cdn.example.com/path/song.slja
-    // Localhost requests skip token; LAN requests require ?token=
+    // API: Open an external LouvorJA presentation (.slja / .lja)
+    // Modes:
+    //   1) Local file (no download) — localhost only:
+    //      GET /api/open-external?path=C:\folder\song.slja
+    //   2) Remote HTTPS URL with disk cache:
+    //      GET /api/open-external?url=https://cdn.example.com/song.slja
+    //      Optional: &refresh=1 to force re-download
+    // LAN requests require ?token= (same as other /api/*)
     if arq = '/api/open-external' then
     begin
+      externalPath := Trim(ARequestInfo.Params.Values['path']);
       externalUrl := Trim(ARequestInfo.Params.Values['url']);
+      forceRefresh :=
+        (ARequestInfo.Params.Values['refresh'] = '1') or
+        SameText(ARequestInfo.Params.Values['refresh'], 'true');
+
+      // --- Mode 1: local path (never download) ---
+      if externalPath <> '' then
+      begin
+        // Opening arbitrary local files from the LAN would be dangerous
+        if not isLocalRequest then
+        begin
+          AResponseInfo.ResponseNo := 403;
+          AResponseInfo.ContentText :=
+            '{"status":"error","message":"path= is only allowed from localhost","code":"PATH_LOCALHOST_ONLY"}';
+          Exit;
+        end;
+
+        if not IsAllowedLocalSljaPath(externalPath) then
+        begin
+          AResponseInfo.ResponseNo := 400;
+          AResponseInfo.ContentText :=
+            '{"status":"error","message":"Invalid or missing local .slja/.lja path","code":"INVALID_PATH"}';
+          Exit;
+        end;
+
+        // Normalize for processaArquivo (strip file://, expand)
+        if externalPath.StartsWith('file:///', True) then
+          Delete(externalPath, 1, 8)
+        else if externalPath.StartsWith('file://', True) then
+          Delete(externalPath, 1, 7);
+        externalPath := StringReplace(externalPath, '/', '\', [rfReplaceAll]);
+        externalPath := ExpandFileName(externalPath);
+
+        TThread.Queue(nil,
+          procedure
+          begin
+            if Assigned(fmIndex) then
+              fmIndex.processaArquivo(externalPath);
+          end
+        );
+
+        AResponseInfo.ContentText :=
+          '{"status":"ok","action":"open-external","source":"local"}';
+        Exit;
+      end;
+
+      // --- Mode 2: remote URL (+ cache) ---
       if externalUrl = '' then
       begin
         AResponseInfo.ResponseNo := 400;
         AResponseInfo.ContentText :=
-          '{"status":"error","message":"Missing url. Usage: /api/open-external?url=https://.../file.slja","code":"MISSING_URL"}';
+          '{"status":"error","message":"Missing url or path. Usage: /api/open-external?url=https://.../file.slja OR /api/open-external?path=C:\\file.slja","code":"MISSING_URL"}';
         Exit;
       end;
 
@@ -1094,50 +1208,77 @@ begin
         Exit;
       end;
 
+      if (not forceRefresh) and FileExists(CacheFileForUrl(externalUrl)) then
+        openSource := 'cache'
+      else
+        openSource := 'download';
+
       TThread.Queue(nil,
         procedure
         const
           MaxBytes = 50 * 1024 * 1024; // 50 MB
         var
           dest: string;
+          tmp: string;
           ok: Boolean;
           size: Int64;
+          useCache: Boolean;
         begin
           if not Assigned(fmIndex) then
             Exit;
 
-          dest := fmIndex.dir_temp + 'open_ext_' +
-            FormatDateTime('yyyymmddHHNNSSZZZ', Now) + '.slja';
+          dest := CacheFileForUrl(externalUrl);
+          useCache := (not forceRefresh) and FileExists(dest);
+
+          if useCache then
+          begin
+            fmIndex.processaArquivo(dest);
+            Exit;
+          end;
+
+          // Download to a temp name, then replace cache atomically when valid
+          tmp := dest + '.part';
+          if FileExists(tmp) then
+            DeleteFile(tmp);
+
           ok := False;
           try
-            ok := fmIndex.DownloadArquivo(externalUrl, dest);
+            ok := fmIndex.DownloadArquivo(externalUrl, tmp);
           except
             ok := False;
           end;
 
-          if ok and FileExists(dest) then
+          if ok and FileExists(tmp) then
           begin
             try
-              size := TFile.GetSize(dest);
+              size := TFile.GetSize(tmp);
             except
               size := -1;
             end;
 
             if (size <= 0) or (size > MaxBytes) then
             begin
-              DeleteFile(dest);
+              DeleteFile(tmp);
               Exit;
             end;
 
-            fmIndex.processaArquivo(dest);
+            if FileExists(dest) then
+              DeleteFile(dest);
+            if RenameFile(tmp, dest) then
+              fmIndex.processaArquivo(dest)
+            else
+            begin
+              // Fallback if rename fails (file locked): open the .part copy
+              fmIndex.processaArquivo(tmp);
+            end;
           end
-          else if FileExists(dest) then
-            DeleteFile(dest);
+          else if FileExists(tmp) then
+            DeleteFile(tmp);
         end
       );
 
       AResponseInfo.ContentText :=
-        '{"status":"ok","action":"open-external"}';
+        '{"status":"ok","action":"open-external","source":"' + openSource + '"}';
       Exit;
     end;
   end;
