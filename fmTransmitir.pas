@@ -87,6 +87,7 @@ type
   private
     { Private declarations }
     tentativaConexao: Integer;
+    function IsAllowedExternalSljaUrl(const AUrl: string): Boolean;
 
     // ====================================================================
     // API v2 - declarações
@@ -578,6 +579,86 @@ begin
     Result := Result + CHARS[Random(Length(CHARS)) + 1];
 end;
 
+function TfTransmitir.IsAllowedExternalSljaUrl(const AUrl: string): Boolean;
+var
+  s, host, pathPart: string;
+  p, octets: Integer;
+begin
+  Result := False;
+  s := Trim(AUrl);
+  if s = '' then
+    Exit;
+
+  // HTTPS only — avoids cleartext and most local-file tricks
+  if not s.StartsWith('https://', True) then
+    Exit;
+
+  Delete(s, 1, 8); // strip https://
+
+  // Reject credentials in URL (user:pass@host)
+  if Pos('@', s) > 0 then
+    Exit;
+
+  p := Pos('/', s);
+  if p > 0 then
+  begin
+    host := Copy(s, 1, p - 1);
+    pathPart := Copy(s, p, MaxInt);
+  end
+  else
+  begin
+    host := s;
+    pathPart := '';
+  end;
+
+  // Strip query/fragment from path before extension check
+  p := Pos('?', pathPart);
+  if p > 0 then
+    pathPart := Copy(pathPart, 1, p - 1);
+  p := Pos('#', pathPart);
+  if p > 0 then
+    pathPart := Copy(pathPart, 1, p - 1);
+
+  if not pathPart.ToLower.EndsWith('.slja') then
+    Exit;
+
+  // Strip port from host
+  p := Pos(':', host);
+  if p > 0 then
+    host := Copy(host, 1, p - 1);
+
+  host := LowerCase(Trim(host));
+  if (host = '') or (host = 'localhost') or (host = '::1') then
+    Exit;
+  if host.EndsWith('.local') then
+    Exit;
+
+  // Block loopback / link-local / RFC1918 literal hosts (SSRF)
+  if host.StartsWith('127.') or host.StartsWith('0.') or
+     host.StartsWith('10.') or host.StartsWith('192.168.') or
+     host.StartsWith('169.254.') then
+    Exit;
+
+  if host.StartsWith('172.') then
+  begin
+    // 172.16.0.0 – 172.31.255.255
+    Delete(host, 1, 4);
+    p := Pos('.', host);
+    if p > 0 then
+    begin
+      octets := StrToIntDef(Copy(host, 1, p - 1), -1);
+      if (octets >= 16) and (octets <= 31) then
+        Exit;
+    end;
+  end;
+
+  // Reject bracketed IPv6 literals (hostname CDN URLs only)
+  if (Length(host) > 0) and (host[1] = '[') then
+    Exit;
+
+  Result := True;
+end;
+
 procedure TfTransmitir.IdHTTPServer1CommandGet(AContext: TIdContext;
   ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
 var
@@ -599,6 +680,7 @@ var
   searchTerm: String;
   jsonResult: String;
   primeiro: Boolean;
+  externalUrl: string;
 begin
   // A v2 é atendida por um bloco próprio, no fim desta unit. Quando ela
   // responde, nada daqui para baixo é executado.
@@ -987,6 +1069,75 @@ begin
         AResponseInfo.ContentText :=
           '{"status":"error","message":"Missing or invalid song ID. Usage example: /api/open-song?id=123","code":"MISSING_ID"}';
       end;
+      Exit;
+    end;
+
+    // API: Download a remote LouvorJA presentation (.slja) and open it
+    // Usage: GET /api/open-external?url=https://cdn.example.com/path/song.slja
+    // Localhost requests skip token; LAN requests require ?token=
+    if arq = '/api/open-external' then
+    begin
+      externalUrl := Trim(ARequestInfo.Params.Values['url']);
+      if externalUrl = '' then
+      begin
+        AResponseInfo.ResponseNo := 400;
+        AResponseInfo.ContentText :=
+          '{"status":"error","message":"Missing url. Usage: /api/open-external?url=https://.../file.slja","code":"MISSING_URL"}';
+        Exit;
+      end;
+
+      if not IsAllowedExternalSljaUrl(externalUrl) then
+      begin
+        AResponseInfo.ResponseNo := 400;
+        AResponseInfo.ContentText :=
+          '{"status":"error","message":"Invalid or disallowed url. Only HTTPS URLs ending in .slja from public hosts are accepted","code":"INVALID_URL"}';
+        Exit;
+      end;
+
+      TThread.Queue(nil,
+        procedure
+        const
+          MaxBytes = 50 * 1024 * 1024; // 50 MB
+        var
+          dest: string;
+          ok: Boolean;
+          size: Int64;
+        begin
+          if not Assigned(fmIndex) then
+            Exit;
+
+          dest := fmIndex.dir_temp + 'open_ext_' +
+            FormatDateTime('yyyymmddHHNNSSZZZ', Now) + '.slja';
+          ok := False;
+          try
+            ok := fmIndex.DownloadArquivo(externalUrl, dest);
+          except
+            ok := False;
+          end;
+
+          if ok and FileExists(dest) then
+          begin
+            try
+              size := TFile.GetSize(dest);
+            except
+              size := -1;
+            end;
+
+            if (size <= 0) or (size > MaxBytes) then
+            begin
+              DeleteFile(dest);
+              Exit;
+            end;
+
+            fmIndex.processaArquivo(dest);
+          end
+          else if FileExists(dest) then
+            DeleteFile(dest);
+        end
+      );
+
+      AResponseInfo.ContentText :=
+        '{"status":"ok","action":"open-external"}';
       Exit;
     end;
   end;
