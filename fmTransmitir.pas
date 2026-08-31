@@ -87,6 +87,113 @@ type
   private
     { Private declarations }
     tentativaConexao: Integer;
+
+    // ====================================================================
+    // API v2 - declarações
+    //
+    // Tudo que pertence à v2 fica agrupado aqui e, na implementação, num
+    // bloco único no fim da unit. A v1 não é tocada: continua atendendo
+    // quem já está integrado a ela.
+    // ====================================================================
+
+    // Roteamento. Devolve True quando a requisição era da v2 e já foi
+    // respondida - nesse caso o handler principal não segue adiante.
+    function trataApiV2(AContext: TIdContext; ARequestInfo: TIdHTTPRequestInfo;
+      AResponseInfo: TIdHTTPResponseInfo): Boolean;
+    procedure v2Despacha(ARequestInfo: TIdHTTPRequestInfo;
+      AResponseInfo: TIdHTTPResponseInfo; const rota, acao: string);
+
+    // Verbos que o Indy não entrega ao OnCommandGet, como o OPTIONS
+    procedure IdHTTPServer1CommandOther(AContext: TIdContext;
+      ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
+
+    // Impede que o Indy recuse sozinho o esquema Bearer
+    procedure IdHTTPServer1ParseAuthentication(AContext: TIdContext;
+      const AAuthType, AAuthData: String; var VUsername, VPassword: String;
+      var VHandled: Boolean);
+
+    // Executa na thread da interface e espera pelo fim, com prazo. Todo
+    // acesso a componente visual ou ao banco passa por aqui.
+    function executaNaInterface(const rotina: TProc; timeoutMs: Integer): Boolean;
+
+    // Autenticação: página servida pelo próprio programa dispensa token
+    function v2PaginaInterna(AContext: TIdContext;
+      ARequestInfo: TIdHTTPRequestInfo): Boolean;
+    function v2TokenValido(ARequestInfo: TIdHTTPRequestInfo): Boolean;
+
+    // Montagem das respostas no formato da convenção
+    function escapaJson(const txt: string): string;
+    procedure respondeV2Ok(AResponseInfo: TIdHTTPResponseInfo;
+      const acao, codigo, mensagem, dados: string);
+    procedure respondeV2Erro(AResponseInfo: TIdHTTPResponseInfo;
+      codigoHttp: Integer; const acao, codigo, mensagem: string);
+
+    // Auxiliares das rotas
+    function v2Param(ARequestInfo: TIdHTTPRequestInfo; const nome: string): string;
+    function v2Acao(ARequestInfo: TIdHTTPRequestInfo): string;
+    function v2ExigeMetodo(ARequestInfo: TIdHTTPRequestInfo;
+      AResponseInfo: TIdHTTPResponseInfo; const acao, metodo: string): Boolean;
+    procedure respondeV2Ocupado(AResponseInfo: TIdHTTPResponseInfo;
+      const acao: string);
+    procedure respondeV2AcaoInvalida(AResponseInfo: TIdHTTPResponseInfo;
+      const acao, aceitas: string);
+
+    // Rotas de leitura
+    procedure v2Clock(AResponseInfo: TIdHTTPResponseInfo; const acao: string);
+    procedure v2SongSlides(ARequestInfo: TIdHTTPRequestInfo;
+      AResponseInfo: TIdHTTPResponseInfo; const acao: string);
+    procedure v2Stopwatch(ARequestInfo: TIdHTTPRequestInfo;
+      AResponseInfo: TIdHTTPResponseInfo; const acao: string);
+    procedure v2StopwatchComando(AResponseInfo: TIdHTTPResponseInfo;
+      const acao, acaoPedida: string);
+    procedure v2StopwatchModo(ARequestInfo: TIdHTTPRequestInfo;
+      AResponseInfo: TIdHTTPResponseInfo; const acao: string);
+    procedure v2DrawingNumber(ARequestInfo: TIdHTTPRequestInfo;
+      AResponseInfo: TIdHTTPResponseInfo; const acao: string);
+    procedure v2SearchSongs(ARequestInfo: TIdHTTPRequestInfo;
+      AResponseInfo: TIdHTTPResponseInfo; const acao: string);
+
+    // Documentação legível, servida a partir da pasta server
+    procedure v2Docs(ARequestInfo: TIdHTTPRequestInfo;
+      AResponseInfo: TIdHTTPResponseInfo; const acao: string);
+
+    // Reprodução (player de arquivos)
+    procedure v2Media(ARequestInfo: TIdHTTPRequestInfo;
+      AResponseInfo: TIdHTTPResponseInfo; const acao: string);
+
+    // Vídeos online
+    procedure v2OnlineVideos(ARequestInfo: TIdHTTPRequestInfo;
+      AResponseInfo: TIdHTTPResponseInfo; const acao: string);
+
+    // Bíblia
+    procedure v2Bible(ARequestInfo: TIdHTTPRequestInfo;
+      AResponseInfo: TIdHTTPResponseInfo; const acao: string);
+    procedure v2BibleExibe(ARequestInfo: TIdHTTPRequestInfo;
+      AResponseInfo: TIdHTTPResponseInfo; const acao: string);
+    procedure v2BibleNavega(AResponseInfo: TIdHTTPResponseInfo;
+      const acao, acaoPedida: string);
+    function versaoBiblia: string;
+
+    // Liturgia
+    procedure v2Liturgy(ARequestInfo: TIdHTTPRequestInfo;
+      AResponseInfo: TIdHTTPResponseInfo; const acao: string);
+    procedure v2LiturgyAbre(ARequestInfo: TIdHTTPRequestInfo;
+      AResponseInfo: TIdHTTPResponseInfo; const acao: string);
+    function v2LiturgyDiaDoItem(const chave: string): Integer;
+
+    // Rotas de comando
+    procedure v2Draw(AResponseInfo: TIdHTTPResponseInfo; const acao: string);
+    procedure v2DrawAdd(ARequestInfo: TIdHTTPRequestInfo;
+      AResponseInfo: TIdHTTPResponseInfo; const acao: string);
+    procedure v2DrawRemove(ARequestInfo: TIdHTTPRequestInfo;
+      AResponseInfo: TIdHTTPResponseInfo; const acao: string);
+    procedure v2DrawLimpa(AResponseInfo: TIdHTTPResponseInfo;
+      const acao, acaoPedida: string);
+    procedure refazMapaSorteio;
+    procedure v2Keyboard(ARequestInfo: TIdHTTPRequestInfo;
+      AResponseInfo: TIdHTTPResponseInfo; const acao: string);
+    procedure v2OpenSong(ARequestInfo: TIdHTTPRequestInfo;
+      AResponseInfo: TIdHTTPResponseInfo; const acao: string);
   public
     { Public declarations }
   end;
@@ -358,6 +465,11 @@ begin
       then seSrvToken.Text := geraToken();
 
 
+    //Eventos que a v2 precisa. Ficam aqui porque é onde o servidor é
+    //configurado; a v1 não é afetada por nenhum dos dois.
+    IdHTTPServer1.OnCommandOther := IdHTTPServer1CommandOther;
+    IdHTTPServer1.OnParseAuthentication := IdHTTPServer1ParseAuthentication;
+
     IdHTTPServer1.DefaultPort := StrToInt(seSrvPorta.Text);
     Binding := IdHTTPServer1.Bindings.Add;
     Binding.Port := IdHTTPServer1.DefaultPort;
@@ -487,6 +599,11 @@ var
   jsonResult: String;
   primeiro: Boolean;
 begin
+  // A v2 é atendida por um bloco próprio, no fim desta unit. Quando ela
+  // responde, nada daqui para baixo é executado.
+  if trataApiV2(AContext, ARequestInfo, AResponseInfo) then
+    Exit;
+
   // Allow cross-origin requests from web applications
   AResponseInfo.CustomHeaders.Values['Access-Control-Allow-Origin'] := '*';
   AResponseInfo.CustomHeaders.Values['Access-Control-Allow-Methods'] := 'GET, OPTIONS';
@@ -794,7 +911,12 @@ begin
     // Usage: GET /api/search-songs?q=termo
     if arq = '/api/search-songs' then
     begin
-        searchTerm := Trim(ARequestInfo.Params.Values['q']);
+        // O Indy decodifica a query string com o charset do Content-Type, e
+        // num GET não existe Content-Type: o charset fica vazio e ele usa o
+        // padrão de 8 bits. Como o navegador percent-encoda em UTF-8, buscar
+        // "coração" não encontrava nada, enquanto "coracao" encontrava. v2Param
+        // faz a decodificação correta.
+        searchTerm := Trim(v2Param(ARequestInfo, 'q'));
 
         if searchTerm = '' then
         begin
@@ -900,6 +1022,2676 @@ begin
   seSrvUrl.Text := StringReplace(seSrvUrl.Text,'http://','',[rfIgnoreCase, rfReplaceAll]);
   seSrvUrl.Text := StringReplace(seSrvUrl.Text,'https://','',[rfIgnoreCase, rfReplaceAll]);
   //192.168.56.1
+end;
+
+// ##########################################################################
+// #                                 API v2                                 #
+// ##########################################################################
+//
+// Daqui até o fim da unit é tudo da v2. Nada acima é usado por ela, e ela não
+// altera nada da v1 - as duas rodam lado a lado.
+//
+// ------------------------------- CONVENÇÃO --------------------------------
+//
+// ROTA       /api/v2/<recurso>, em kebab-case. Barra final não muda a rota.
+//            O recurso é substantivo; o verbo vai no parâmetro "action".
+//
+// MÉTODO     GET lê, POST altera. Método errado devolve 405. Comando não
+//            alterna: repetir "start" mantém iniciado, não pausa.
+//
+// TOKEN      Exigido, menos em página servida pelo próprio programa - que é
+//            conexão de 127.0.0.1 com Origin ausente ou igual à do servidor.
+//            Aceito em "Authorization: Bearer <token>" ou em ?token=.
+//
+// PARÂMETRO  Nome em minúsculas. "action" é comparado sem diferenciar
+//            maiúsculas e com Trim. Ausente -> 400 MISSING_*; inválido ->
+//            400 INVALID_*. Parâmetro desconhecido é ignorado. Os valores
+//            são lidos por v2Param, que decodifica em UTF-8.
+//
+// RESPOSTA   Sempre JSON em UTF-8, inclusive nos erros.
+//
+//     { "status":"ok",    "action":"...", "code":"...", "message":"...",
+//       <campos de dados> }
+//
+//     { "status":"error", "action":"...", "code":"...", "message":"..." }
+//
+//     status   só "ok" ou "error".
+//     code     sempre presente, em SCREAMING_SNAKE. É o contrato estável: o
+//              cliente decide por ele, nunca pelo texto. Em "ok" descreve o
+//              estado; em "error", o motivo.
+//     message  só texto para humano. Nunca carrega dado.
+//     dados    em campo próprio e nomeado ("musicas", "time", "slide"), no
+//              topo do objeto. Nunca dentro de "message".
+//
+// HTTP       200 ok               400 erro do cliente
+//            401 token            404 rota inexistente
+//            405 método errado    409 o estado do programa impede
+//            500 falha interna    503 interface não respondeu no prazo
+//
+// THREAD     O handler roda numa thread por conexão. Todo acesso a componente
+//            visual ou ao banco passa por executaNaInterface, nunca direto.
+//            503 significa "não deu para confirmar no prazo", e não "nada
+//            aconteceu": a rotina enfileirada ainda pode rodar depois.
+//
+// ##########################################################################
+
+const
+  ROTA_V2 = '/api/v2';
+
+  //Prazo para a thread da interface atender. Se estourar, a resposta é
+  //503 em vez de deixar a conexão presa: a interface pode estar com um
+  //diálogo modal aberto, esperando o operador.
+  TIMEOUT_INTERFACE = 5000;
+
+  //Comando ganha prazo maior: abrir uma música carrega letra e áudio, e
+  //demora bem mais que ler uma legenda de tela
+  TIMEOUT_COMANDO = 15000;
+
+type
+  //Ponte entre a thread do Indy e a thread da interface.
+  //
+  //Vive por contagem de referência de propósito: se a espera desistir pelo
+  //prazo, a rotina enfileirada ainda vai rodar em algum momento e sinalizar
+  //o evento. Se o objeto fosse liberado pela thread que desistiu, essa
+  //sinalização cairia em memória já liberada.
+  IExecucaoInterface = interface
+    ['{7F2A1C64-3E5B-4B9A-9C21-6D0E5A8B4411}']
+    procedure Executa(const rotina: TProc);
+    function Espera(timeoutMs: Integer): Boolean;
+    function Erro: string;
+  end;
+
+  TExecucaoInterface = class(TInterfacedObject, IExecucaoInterface)
+  private
+    FEvento: TEvent;
+    FErro: string;
+  public
+    constructor Create;
+    destructor Destroy; override;
+    procedure Executa(const rotina: TProc);
+    function Espera(timeoutMs: Integer): Boolean;
+    function Erro: string;
+  end;
+
+constructor TExecucaoInterface.Create;
+begin
+  inherited Create;
+  //Manual reset: quem espera só precisa saber que terminou
+  FEvento := TEvent.Create(nil, True, False, '');
+end;
+
+destructor TExecucaoInterface.Destroy;
+begin
+  FEvento.Free;
+  inherited;
+end;
+
+procedure TExecucaoInterface.Executa(const rotina: TProc);
+begin
+  try
+    rotina();
+  except
+    on E: Exception do
+      //A exceção não pode escapar aqui: ela estouraria na thread da
+      //interface e viraria um diálogo de erro na cara do operador por
+      //causa de uma requisição HTTP. É levada de volta a quem pediu.
+      FErro := E.ClassName + ': ' + E.Message;
+  end;
+  FEvento.SetEvent;
+end;
+
+function TExecucaoInterface.Espera(timeoutMs: Integer): Boolean;
+begin
+  Result := (FEvento.WaitFor(timeoutMs) = wrSignaled);
+end;
+
+function TExecucaoInterface.Erro: string;
+begin
+  Result := FErro;
+end;
+
+{
+  Executa a rotina na thread da interface e espera pelo fim.
+
+  O handler do Indy roda numa thread por conexão. Ler ou escrever componente
+  visual dali é acesso concorrente à VCL - a causa de travamentos e violações
+  de memória difíceis de reproduzir. Na v2, todo acesso a componente visual e
+  ao banco passa por aqui.
+
+  Devolve False quando o prazo estourou, e nesse caso a rotina ainda pode vir
+  a rodar depois. Ou seja: em comando, prazo estourado não significa que nada
+  aconteceu, significa que não deu para confirmar a tempo.
+}
+function TfTransmitir.executaNaInterface(const rotina: TProc;
+  timeoutMs: Integer): Boolean;
+var
+  execucao: IExecucaoInterface;
+begin
+  //Se já estamos na thread da interface, enfileirar e esperar por nós
+  //mesmos travaria para sempre
+  if (TThread.CurrentThread.ThreadID = MainThreadID) then
+  begin
+    rotina();
+    Exit(True);
+  end;
+
+  execucao := TExecucaoInterface.Create;
+
+  TThread.Queue(nil,
+    procedure
+    begin
+      execucao.Executa(rotina);
+    end);
+
+  Result := execucao.Espera(timeoutMs);
+
+  //Falha dentro da interface volta como exceção aqui, para o endpoint
+  //responder erro em vez de fingir que deu certo
+  if Result and (execucao.Erro <> '') then
+    raise Exception.Create(execucao.Erro);
+end;
+
+{
+  Escapa tudo que o JSON exige.
+
+  Na v1 só as aspas eram tratadas, e só em alguns pontos. Uma barra invertida
+  ou um caractere de controle vindo do banco ou da letra da música produzia
+  JSON inválido, e o cliente recebia erro de interpretação em vez dos dados.
+}
+function TfTransmitir.escapaJson(const txt: string): string;
+var
+  i: Integer;
+  c: Char;
+begin
+  Result := '';
+  for i := 1 to Length(txt) do
+  begin
+    c := txt[i];
+    case c of
+      '"':  Result := Result + '\"';
+      '\':  Result := Result + '\\';
+      #8:   Result := Result + '\b';
+      #9:   Result := Result + '\t';
+      #10:  Result := Result + '\n';
+      #12:  Result := Result + '\f';
+      #13:  Result := Result + '\r';
+    else
+      if (c < #32) then
+        Result := Result + '\u' + LowerCase(IntToHex(Ord(c), 4))
+      else
+        Result := Result + c;
+    end;
+  end;
+end;
+
+{
+  Resposta de sucesso.
+
+  "code" está sempre presente e é o contrato estável: é por ele que o cliente
+  decide, nunca pelo texto de "message", que é só para humano e pode ser
+  traduzido ou reescrito. "dados" entra como trecho de JSON já pronto, com os
+  campos nomeados do endpoint.
+}
+procedure TfTransmitir.respondeV2Ok(AResponseInfo: TIdHTTPResponseInfo;
+  const acao, codigo, mensagem, dados: string);
+var
+  json: string;
+begin
+  json := '{"status":"ok"' +
+          ',"action":"' + escapaJson(acao) + '"' +
+          ',"code":"' + escapaJson(codigo) + '"';
+
+  if (mensagem <> '') then
+    json := json + ',"message":"' + escapaJson(mensagem) + '"';
+
+  if (dados <> '') then
+    json := json + ',' + dados;
+
+  AResponseInfo.ResponseNo := 200;
+  AResponseInfo.ContentText := json + '}';
+end;
+
+{
+  Resposta de erro.
+
+  O código HTTP acompanha o significado: 400 erro do cliente, 401 token,
+  404 rota inexistente, 409 o estado do programa impede, 500 falha interna,
+  503 interface ocupada.
+}
+procedure TfTransmitir.respondeV2Erro(AResponseInfo: TIdHTTPResponseInfo;
+  codigoHttp: Integer; const acao, codigo, mensagem: string);
+begin
+  AResponseInfo.ResponseNo := codigoHttp;
+  AResponseInfo.ContentText :=
+    '{"status":"error"' +
+    ',"action":"' + escapaJson(acao) + '"' +
+    ',"code":"' + escapaJson(codigo) + '"' +
+    ',"message":"' + escapaJson(mensagem) + '"}';
+end;
+
+{
+  Identifica requisição vinda de uma página servida pelo próprio programa,
+  que é o caso que dispensa token.
+
+  São duas condições, e cada uma cobre um caso:
+
+  - Conexão da própria máquina: o cabeçalho Origin só é confiável quando quem
+    monta a requisição é um navegador. Um script escreve nele o que quiser,
+    então pela rede o Origin não vale como prova e o token continua exigido.
+
+  - Origin ausente ou igual à origem do servidor: numa requisição de mesma
+    origem o navegador omite o Origin ou manda a origem do próprio servidor.
+    Uma página de terceiro aberta no navegador do operador sempre manda a
+    origem dela, e a página não consegue mentir nisso. É o que separa
+    "página do programa" de "qualquer página aberta na máquina".
+}
+function TfTransmitir.v2PaginaInterna(AContext: TIdContext;
+  ARequestInfo: TIdHTTPRequestInfo): Boolean;
+var
+  origem: string;
+begin
+  //Binding.IP é o endereço do lado do servidor, que o cliente não escolhe
+  if (AContext.Binding.IP <> '127.0.0.1') then
+    Exit(False);
+
+  origem := Trim(ARequestInfo.RawHeaders.Values['Origin']);
+  if (origem = '') then
+    Exit(True);
+
+  Result := SameText(origem, 'http://' + ARequestInfo.Host);
+end;
+
+{
+  Confere o token, aceito no cabeçalho Authorization ou na URL.
+
+  O cabeçalho é a forma preferida: na URL o token vai parar no histórico do
+  navegador, em log de servidor e no cabeçalho Referer enviado a terceiros.
+
+  lerParam pode ser chamado desta thread: ele cria um TIniFile local e lê pela
+  API do Windows, que é segura entre threads.
+}
+function TfTransmitir.v2TokenValido(ARequestInfo: TIdHTTPRequestInfo): Boolean;
+var
+  informado, esperado, autorizacao: string;
+begin
+  autorizacao := Trim(ARequestInfo.RawHeaders.Values['Authorization']);
+
+  if StartsText('Bearer ', autorizacao) then
+    informado := Trim(Copy(autorizacao, Length('Bearer ') + 1, MaxInt))
+  else
+    informado := Trim(v2Param(ARequestInfo, 'token'));
+
+  esperado := Trim(fmIndex.lerParam('Servidor', 'Token', ''));
+
+  //Sem token configurado não há como autenticar: o acesso pela rede fica
+  //fechado, em vez de liberado para qualquer um
+  Result := (esperado <> '') and (informado = esperado);
+end;
+
+{
+  Lê um parâmetro da URL decodificando em UTF-8.
+
+  Não dá para usar ARequestInfo.Params aqui. O Indy decodifica a query string
+  com o charset do Content-Type (DecodeAndSetParams, em IdCustomHTTPServer),
+  e numa requisição GET não existe Content-Type - o charset fica vazio e ele
+  cai no padrão de 8 bits.
+
+  Como todo navegador percent-encoda em UTF-8, o resultado é que qualquer
+  termo acentuado chegava corrompido: buscar "coração" não encontrava nada,
+  enquanto "coracao" encontrava 21 músicas. Vale para a v1 também.
+}
+function TfTransmitir.v2Param(ARequestInfo: TIdHTTPRequestInfo;
+  const nome: string): string;
+var
+  bruto, item, chave: string;
+  i, ini, p: Integer;
+begin
+  bruto := ARequestInfo.QueryParams;
+
+  ini := 1;
+  i := 1;
+  while (i <= Length(bruto) + 1) do
+  begin
+    if (i > Length(bruto)) or (bruto[i] = '&') then
+    begin
+      item := Copy(bruto, ini, i - ini);
+      p := Pos('=', item);
+
+      if (p > 0) then
+      begin
+        chave := Trim(Copy(item, 1, p - 1));
+        if SameText(chave, nome) then
+        begin
+          item := Copy(item, p + 1, MaxInt);
+          //Formulário codifica espaço como '+' (RFC 1866)
+          item := StringReplace(item, '+', ' ', [rfReplaceAll]);
+          Exit(TIdURI.URLDecode(item, IndyTextEncoding_UTF8));
+        end;
+      end;
+
+      ini := i + 1;
+    end;
+    Inc(i);
+  end;
+
+  //Não veio na URL: pode ter vindo no corpo de um POST, que o Indy já
+  //decodifica com o charset declarado no Content-Type
+  Result := ARequestInfo.Params.Values[nome];
+end;
+
+//Ação pedida, normalizada. Na v1 a comparação era exata: 'Start' ou
+//'start ' não eram reconhecidos.
+function TfTransmitir.v2Acao(ARequestInfo: TIdHTTPRequestInfo): string;
+begin
+  Result := LowerCase(Trim(v2Param(ARequestInfo, 'action')));
+end;
+
+{
+  Leitura é GET, comando é POST.
+
+  Não é firula de estilo: um GET é tratado por navegadores, prefetchers e
+  prévias de link como requisição sem efeito, e pode ser repetido sozinho.
+  Na v1 tudo era GET, inclusive sortear, apagar e trocar de slide.
+}
+function TfTransmitir.v2ExigeMetodo(ARequestInfo: TIdHTTPRequestInfo;
+  AResponseInfo: TIdHTTPResponseInfo; const acao, metodo: string): Boolean;
+begin
+  Result := SameText(Trim(ARequestInfo.Command), metodo);
+  if not Result then
+    respondeV2Erro(AResponseInfo, 405, acao, 'METHOD_NOT_ALLOWED',
+      IfThen(SameText(metodo, 'GET'),
+        'Esta ação é de leitura e aceita apenas GET',
+        'Esta ação altera o programa e exige POST'));
+end;
+
+//A interface não respondeu no prazo. Pode estar com um diálogo modal aberto
+//esperando o operador - por exemplo o aviso de "não há itens para sortear".
+procedure TfTransmitir.respondeV2Ocupado(AResponseInfo: TIdHTTPResponseInfo;
+  const acao: string);
+begin
+  respondeV2Erro(AResponseInfo, 503, acao, 'UI_BUSY',
+    'O programa não respondeu no prazo. Pode haver uma janela aberta ' +
+    'aguardando o operador.');
+end;
+
+procedure TfTransmitir.respondeV2AcaoInvalida(AResponseInfo: TIdHTTPResponseInfo;
+  const acao, aceitas: string);
+begin
+  respondeV2Erro(AResponseInfo, 400, acao, 'INVALID_ACTION',
+    'Parâmetro action ausente ou não reconhecido. Aceitos: ' + aceitas);
+end;
+
+{
+  Hora do computador onde o LouvorJA está rodando.
+
+  Não passa pela thread da interface: não toca em componente visual.
+}
+procedure TfTransmitir.v2Clock(AResponseInfo: TIdHTTPResponseInfo;
+  const acao: string);
+var
+  agora: TDateTime;
+begin
+  agora := Now;
+  respondeV2Ok(AResponseInfo, acao, 'CLOCK', '',
+    '"date":"' + FormatDateTime('yyyy-mm-dd', agora) + '"' +
+    ',"time":"' + FormatDateTime('hh:nn:ss', agora) + '"' +
+    ',"datetime":"' + FormatDateTime('yyyy-mm-dd"T"hh:nn:ss', agora) + '"');
+end;
+
+{
+  Estado da música em exibição e texto dos slides.
+
+  Tudo que é lido aqui é componente visual, então a leitura inteira acontece
+  dentro da thread da interface e só depois o JSON é montado.
+}
+procedure TfTransmitir.v2SongSlides(ARequestInfo: TIdHTTPRequestInfo;
+  AResponseInfo: TIdHTTPResponseInfo; const acao: string);
+var
+  acaoPedida, qualSlide: string;
+  tocando: Boolean;
+  slideAtual, slideProximo: string;
+  totalSlides: Integer;
+begin
+  acaoPedida := v2Acao(ARequestInfo);
+
+  //Comandos: alteram a exibição, então exigem POST
+  if (acaoPedida = 'next') or (acaoPedida = 'previous') or (acaoPedida = 'close') then
+  begin
+    if not v2ExigeMetodo(ARequestInfo, AResponseInfo, acao, 'POST') then
+      Exit;
+
+    tocando := False;
+
+    if not executaNaInterface(
+      procedure
+      begin
+        tocando := (fMusica <> nil) and (fMusica.Visible);
+        if not tocando then
+          Exit;
+
+        if (acaoPedida = 'next') then
+          fMusica.acaoSlide('prox')
+        else if (acaoPedida = 'previous') then
+          fMusica.acaoSlide('ant')
+        else
+          fMusica.Close;
+      end, TIMEOUT_COMANDO) then
+    begin
+      respondeV2Ocupado(AResponseInfo, acao);
+      Exit;
+    end;
+
+    //Pedir para avançar sem música aberta é conflito de estado, não erro de
+    //requisição. A v1 devolvia 200 aqui, o que fazia o comando parecer ter
+    //funcionado.
+    if not tocando then
+    begin
+      respondeV2Erro(AResponseInfo, 409, acao, 'NO_SONG_PLAYING',
+        'Nenhuma música em exibição');
+      Exit;
+    end;
+
+    if (acaoPedida = 'next') then
+      respondeV2Ok(AResponseInfo, acao, 'SLIDE_ADVANCED', 'Avançou um slide', '')
+    else if (acaoPedida = 'previous') then
+      respondeV2Ok(AResponseInfo, acao, 'SLIDE_REVERTED', 'Voltou um slide', '')
+    else
+      respondeV2Ok(AResponseInfo, acao, 'SONG_CLOSED', 'Música fechada', '');
+    Exit;
+  end;
+
+  if (acaoPedida <> 'status') and (acaoPedida <> 'slide') then
+  begin
+    respondeV2AcaoInvalida(AResponseInfo, acao,
+      'status, slide (GET); next, previous, close (POST)');
+    Exit;
+  end;
+
+  if not v2ExigeMetodo(ARequestInfo, AResponseInfo, acao, 'GET') then
+    Exit;
+
+  qualSlide := LowerCase(Trim(v2Param(ARequestInfo, 'slide')));
+  if (qualSlide = '') then
+    qualSlide := 'current';
+
+  //Parâmetro inválido é erro do cliente e é recusado antes de olhar o estado
+  //do programa: senão, com nenhuma música aberta, um valor errado passaria
+  //despercebido e só apareceria quando houvesse música em exibição
+  if (acaoPedida = 'slide') and (qualSlide <> 'current') and (qualSlide <> 'next') then
+  begin
+    respondeV2Erro(AResponseInfo, 400, acao, 'INVALID_SLIDE',
+      'Parâmetro slide deve ser current ou next');
+    Exit;
+  end;
+
+  tocando := False;
+  slideAtual := '';
+  slideProximo := '';
+  totalSlides := 0;
+
+  if not executaNaInterface(
+    procedure
+    begin
+      tocando := (fMusica <> nil) and (fMusica.Visible);
+      if not tocando then
+        Exit;
+
+      slideAtual := fMusica.lblLetra.Caption;
+      totalSlides := fMusica.lbLetras.Items.Count;
+
+      //nslide aponta para o próximo da lista
+      if (fMusica.lbLetras.Items.Count > fMusica.nslide) then
+        slideProximo := fMusica.lbLetras.Items[fMusica.nslide]
+      else
+        slideProximo := '';
+    end, TIMEOUT_INTERFACE) then
+  begin
+    respondeV2Ocupado(AResponseInfo, acao);
+    Exit;
+  end;
+
+  if not tocando then
+  begin
+    respondeV2Ok(AResponseInfo, acao, 'NO_SONG_PLAYING',
+      'Nenhuma música em exibição', '"playing":false');
+    Exit;
+  end;
+
+  if (acaoPedida = 'status') then
+  begin
+    respondeV2Ok(AResponseInfo, acao, 'SONG_PLAYING', '',
+      '"playing":true' +
+      ',"slide_count":' + IntToStr(totalSlides) +
+      ',"has_next":' + IfThen(slideProximo <> '', 'true', 'false'));
+    Exit;
+  end;
+
+  //action=slide: o texto pedido vai em campo próprio. Na v1 ele vinha em
+  //"message", misturado com as frases destinadas a humano.
+  if (qualSlide = 'next') then
+    respondeV2Ok(AResponseInfo, acao, 'SONG_PLAYING', '',
+      '"playing":true,"slide":"' + escapaJson(slideProximo) + '"' +
+      ',"which":"next","is_last":' + IfThen(slideProximo = '', 'true', 'false'))
+  else
+    respondeV2Ok(AResponseInfo, acao, 'SONG_PLAYING', '',
+      '"playing":true,"slide":"' + escapaJson(slideAtual) + '","which":"current"');
+end;
+
+{
+  Estado do cronômetro.
+
+  O estado vem de DM.tmrCrono.Enabled, que é quem de fato determina se o
+  cronômetro anda. A legenda do botão reflete o mesmo estado, mas é texto de
+  apresentação: derivar decisão dela amarra a API a um detalhe de interface.
+}
+procedure TfTransmitir.v2Stopwatch(ARequestInfo: TIdHTTPRequestInfo;
+  AResponseInfo: TIdHTTPResponseInfo; const acao: string);
+var
+  acaoPedida: string;
+  rodando: Boolean;
+  tempo, modo, alvo, voltas: string;
+begin
+  acaoPedida := v2Acao(ARequestInfo);
+
+  //stop e note são os nomes da v1, mantidos como apelidos
+  if (acaoPedida = 'stop') then
+    acaoPedida := 'reset';
+  if (acaoPedida = 'note') then
+    acaoPedida := 'lap';
+
+  if (acaoPedida = 'set-mode') then
+  begin
+    if not v2ExigeMetodo(ARequestInfo, AResponseInfo, acao, 'POST') then
+      Exit;
+    v2StopwatchModo(ARequestInfo, AResponseInfo, acao);
+    Exit;
+  end;
+
+  if (acaoPedida = 'start') or (acaoPedida = 'pause') or
+     (acaoPedida = 'reset') or (acaoPedida = 'lap') then
+  begin
+    if not v2ExigeMetodo(ARequestInfo, AResponseInfo, acao, 'POST') then
+      Exit;
+    v2StopwatchComando(AResponseInfo, acao, acaoPedida);
+    Exit;
+  end;
+
+  if (acaoPedida <> 'status') then
+  begin
+    respondeV2AcaoInvalida(AResponseInfo, acao,
+      'status (GET); start, pause, reset, lap, set-mode (POST)');
+    Exit;
+  end;
+
+  if not v2ExigeMetodo(ARequestInfo, AResponseInfo, acao, 'GET') then
+    Exit;
+
+  rodando := False;
+  tempo := '';
+  modo := '';
+  alvo := '';
+  voltas := '';
+
+  if not executaNaInterface(
+    procedure
+    var
+      //Variável capturada não pode ser controle de for: precisa ser local
+      //deste bloco
+      i: Integer;
+    begin
+      rodando := DM.tmrCrono.Enabled;
+      tempo := fmIndex.lmdCrono.Caption;
+
+      if (fmIndex.rbDirecao.ItemIndex = 0) then
+        modo := 'countup'
+      else
+      begin
+        modo := 'countdown';
+        alvo := fmIndex.txtDecr.Text;
+      end;
+
+      for i := 0 to fmIndex.lbCrono.Items.Count - 1 do
+      begin
+        if (voltas <> '') then
+          voltas := voltas + ',';
+        voltas := voltas + '"' + escapaJson(fmIndex.lbCrono.Items[i].Caption) + '"';
+      end;
+    end, TIMEOUT_INTERFACE) then
+  begin
+    respondeV2Ocupado(AResponseInfo, acao);
+    Exit;
+  end;
+
+  respondeV2Ok(AResponseInfo, acao,
+    IfThen(rodando, 'STOPWATCH_RUNNING', 'STOPWATCH_STOPPED'), '',
+    '"running":' + IfThen(rodando, 'true', 'false') +
+    ',"time":"' + escapaJson(tempo) + '"' +
+    ',"mode":"' + modo + '"' +
+    IfThen(alvo <> '', ',"target":"' + escapaJson(alvo) + '"', '') +
+    ',"laps":[' + voltas + ']');
+end;
+
+{
+  Troca entre progressivo e regressivo e, no regressivo, define o tempo.
+
+  O tempo é validado aqui, antes de chegar ao campo da tela. O txtDecrExit do
+  programa, diante de um valor inválido, abre uma caixa de mensagem modal -
+  que travaria a interface esperando o operador, por causa de uma requisição.
+
+  Zerar faz parte da troca: é o que o programa faz quando o operador muda o
+  modo pelo próprio botão.
+}
+procedure TfTransmitir.v2StopwatchModo(ARequestInfo: TIdHTTPRequestInfo;
+  AResponseInfo: TIdHTTPResponseInfo; const acao: string);
+var
+  modo, alvo, tempo: string;
+  hora: TDateTime;
+  regressivo, rodando: Boolean;
+begin
+  modo := LowerCase(Trim(v2Param(ARequestInfo, 'mode')));
+  alvo := Trim(v2Param(ARequestInfo, 'target'));
+
+  if (modo <> 'countup') and (modo <> 'countdown') then
+  begin
+    respondeV2Erro(AResponseInfo, 400, acao, 'INVALID_MODE',
+      'Parâmetro mode deve ser countup ou countdown');
+    Exit;
+  end;
+
+  regressivo := (modo = 'countdown');
+
+  if regressivo then
+  begin
+    if (alvo = '') then
+    begin
+      respondeV2Erro(AResponseInfo, 400, acao, 'MISSING_TARGET',
+        'No modo countdown informe o tempo em target, no formato hh:mm:ss');
+      Exit;
+    end;
+
+    //Espaço vira zero, como o campo mascarado da tela faz
+    alvo := StringReplace(alvo, ' ', '0', [rfReplaceAll]);
+
+    if not TryStrToTime(alvo, hora) then
+    begin
+      respondeV2Erro(AResponseInfo, 400, acao, 'INVALID_TARGET',
+        'Tempo inválido em target. Use o formato hh:mm:ss, por exemplo 00:05:00');
+      Exit;
+    end;
+
+    if (hora <= 0) then
+    begin
+      respondeV2Erro(AResponseInfo, 400, acao, 'INVALID_TARGET',
+        'O tempo em target precisa ser maior que zero');
+      Exit;
+    end;
+  end;
+
+  rodando := False;
+  tempo := '';
+
+  if not executaNaInterface(
+    procedure
+    begin
+      if (fmIndex.cbFormatoTempoCrono.ItemIndex < 0) then
+        fmIndex.carregaConfiguracoes('CRONO');
+
+      if regressivo then
+        fmIndex.rbDirecao.ItemIndex := 1
+      else
+        fmIndex.rbDirecao.ItemIndex := 0;
+
+      fmIndex.txtDecr.Enabled := regressivo;
+
+      if regressivo then
+      begin
+        fmIndex.txtDecr.Text := alvo;
+        fmIndex.gravaParam('Cronometro', 'Tempo Decrescente', alvo);
+      end;
+
+      fmIndex.gravaParam('Cronometro', 'Direcao',
+        IntToStr(fmIndex.rbDirecao.ItemIndex));
+
+      //Zera para a troca valer já na próxima largada. Também é o que
+      //acontece quando o operador troca o modo pela tela.
+      if fmIndex.btZerarCrono.Enabled then
+        fmIndex.btZerarCronoClick(fmIndex.btZerarCrono);
+
+      rodando := DM.tmrCrono.Enabled;
+      tempo := fmIndex.lmdCrono.Caption;
+    end, TIMEOUT_COMANDO) then
+  begin
+    respondeV2Ocupado(AResponseInfo, acao);
+    Exit;
+  end;
+
+  respondeV2Ok(AResponseInfo, acao, 'STOPWATCH_MODE_SET', '',
+    '"running":' + IfThen(rodando, 'true', 'false') +
+    ',"mode":"' + modo + '"' +
+    ',"time":"' + escapaJson(tempo) + '"' +
+    IfThen(regressivo, ',"target":"' + escapaJson(alvo) + '"', ''));
+end;
+
+{
+  Comandos do cronômetro.
+
+  As ações são idempotentes: repetir "start" mantém andando em vez de
+  alternar. O botão da tela é um alternador - o mesmo botão vira "Pausar"
+  depois de iniciado -, então na v1 chamar start duas vezes pausava sem que
+  o cliente tivesse pedido isso. Aqui o estado real é consultado antes.
+}
+procedure TfTransmitir.v2StopwatchComando(AResponseInfo: TIdHTTPResponseInfo;
+  const acao, acaoPedida: string);
+var
+  rodandoAntes, habilitado, agiu: Boolean;
+  tempo, ultimaVolta: string;
+begin
+  rodandoAntes := False;
+  habilitado := True;
+  agiu := False;
+  tempo := '';
+  ultimaVolta := '';
+
+  if not executaNaInterface(
+    procedure
+    begin
+      //A página do cronômetro só é inicializada quando o operador a abre:
+      //antes disso a lista de formatos de tempo está vazia e o ItemIndex é
+      //-1, e o timer estoura ao formatar a legenda. Comandar pela API não
+      //pode depender de alguém ter aberto a aba antes, então a mesma rotina
+      //que o programa usa é chamada aqui quando ainda não rodou.
+      if (fmIndex.cbFormatoTempoCrono.ItemIndex < 0) then
+        fmIndex.carregaConfiguracoes('CRONO');
+
+      rodandoAntes := DM.tmrCrono.Enabled;
+
+      if (acaoPedida = 'start') or (acaoPedida = 'pause') then
+      begin
+        //O botão fica desabilitado quando o tempo regressivo digitado é
+        //inválido; clicar nele não faria nada e a resposta mentiria
+        habilitado := fmIndex.btIniciarCrono.Enabled;
+        if not habilitado then
+          Exit;
+
+        //Só clica se o estado atual for diferente do pedido
+        if (acaoPedida = 'start') and (not rodandoAntes) then
+        begin
+          fmIndex.btIniciarCronoClick(fmIndex.btIniciarCrono);
+          agiu := True;
+        end
+        else if (acaoPedida = 'pause') and rodandoAntes then
+        begin
+          fmIndex.btIniciarCronoClick(fmIndex.btIniciarCrono);
+          agiu := True;
+        end;
+      end
+      else if (acaoPedida = 'reset') then
+      begin
+        habilitado := fmIndex.btZerarCrono.Enabled;
+        if not habilitado then
+          Exit;
+        fmIndex.btZerarCronoClick(fmIndex.btZerarCrono);
+        agiu := True;
+      end
+      else if (acaoPedida = 'lap') then
+      begin
+        habilitado := fmIndex.btAnotTempo.Enabled;
+        if not habilitado then
+          Exit;
+        fmIndex.btAnotTempoClick(fmIndex.btAnotTempo);
+        agiu := True;
+        if (fmIndex.lbCrono.Items.Count > 0) then
+          ultimaVolta :=
+            fmIndex.lbCrono.Items[fmIndex.lbCrono.Items.Count - 1].Caption;
+      end;
+
+      tempo := fmIndex.lmdCrono.Caption;
+    end, TIMEOUT_COMANDO) then
+  begin
+    respondeV2Ocupado(AResponseInfo, acao);
+    Exit;
+  end;
+
+  if not habilitado then
+  begin
+    respondeV2Erro(AResponseInfo, 409, acao, 'CONTROL_DISABLED',
+      'O controle correspondente está desabilitado no programa. ' +
+      'No modo regressivo isso costuma indicar tempo inválido.');
+    Exit;
+  end;
+
+  if (acaoPedida = 'lap') then
+  begin
+    respondeV2Ok(AResponseInfo, acao, 'LAP_ADDED', '',
+      '"time":"' + escapaJson(tempo) + '"' +
+      ',"lap":"' + escapaJson(ultimaVolta) + '"');
+    Exit;
+  end;
+
+  if (acaoPedida = 'reset') then
+  begin
+    respondeV2Ok(AResponseInfo, acao, 'STOPWATCH_RESET', '',
+      '"running":false,"time":"' + escapaJson(tempo) + '"');
+    Exit;
+  end;
+
+  //Já estar no estado pedido não é erro: o pedido foi atendido de todo jeito
+  if (acaoPedida = 'start') then
+    respondeV2Ok(AResponseInfo, acao,
+      IfThen(agiu, 'STOPWATCH_STARTED', 'STOPWATCH_ALREADY_RUNNING'), '',
+      '"running":true,"time":"' + escapaJson(tempo) + '"')
+  else
+    respondeV2Ok(AResponseInfo, acao,
+      IfThen(agiu, 'STOPWATCH_PAUSED', 'STOPWATCH_ALREADY_PAUSED'), '',
+      '"running":false,"time":"' + escapaJson(tempo) + '"');
+end;
+
+{
+  Estado do sorteio e lista de participantes.
+
+  Aqui some o Sleep da v1: em vez de prender a thread do Indy por até 3
+  segundos esperando o botão habilitar, o estado do sorteio é exposto em
+  "drawing" e o cliente decide se consulta de novo.
+}
+procedure TfTransmitir.v2DrawingNumber(ARequestInfo: TIdHTTPRequestInfo;
+  AResponseInfo: TIdHTTPResponseInfo; const acao: string);
+var
+  acaoPedida: string;
+  sorteando: Boolean;
+  ultimo, participantes, sorteados: string;
+  totalParticipantes: Integer;
+begin
+  acaoPedida := v2Acao(ARequestInfo);
+
+  if (acaoPedida = 'draw') or (acaoPedida = 'add') or (acaoPedida = 'remove') or
+     (acaoPedida = 'clear') or (acaoPedida = 'restart') then
+  begin
+    if not v2ExigeMetodo(ARequestInfo, AResponseInfo, acao, 'POST') then
+      Exit;
+
+    if (acaoPedida = 'draw') then
+      v2Draw(AResponseInfo, acao)
+    else if (acaoPedida = 'add') then
+      v2DrawAdd(ARequestInfo, AResponseInfo, acao)
+    else if (acaoPedida = 'remove') then
+      v2DrawRemove(ARequestInfo, AResponseInfo, acao)
+    else
+      v2DrawLimpa(AResponseInfo, acao, acaoPedida);
+
+    Exit;
+  end;
+
+  if (acaoPedida <> 'status') and (acaoPedida <> 'participants') then
+  begin
+    respondeV2AcaoInvalida(AResponseInfo, acao,
+      'status, participants (GET); draw, add, remove, clear, restart (POST)');
+    Exit;
+  end;
+
+  if not v2ExigeMetodo(ARequestInfo, AResponseInfo, acao, 'GET') then
+    Exit;
+
+  sorteando := False;
+  ultimo := '';
+  participantes := '';
+  sorteados := '';
+  totalParticipantes := 0;
+
+  if not executaNaInterface(
+    procedure
+    var
+      i: Integer;
+    begin
+      //tmrSortear roda durante a animação do sorteio e se desliga sozinho
+      //ao final, quando o número sai
+      sorteando := DM.tmrSortear.Enabled;
+      ultimo := fmIndex.lmdSorteio.Caption;
+      totalParticipantes := fmIndex.lbSorteio.Items.Count;
+
+      if (acaoPedida = 'participants') then
+        for i := 0 to fmIndex.lbSorteio.Items.Count - 1 do
+        begin
+          if (participantes <> '') then
+            participantes := participantes + ',';
+          participantes := participantes +
+            '"' + escapaJson(fmIndex.lbSorteio.Items[i].Caption) + '"';
+        end;
+
+      for i := 0 to fmIndex.lbSorteado.Items.Count - 1 do
+      begin
+        if (sorteados <> '') then
+          sorteados := sorteados + ',';
+        sorteados := sorteados +
+          '"' + escapaJson(fmIndex.lbSorteado.Items[i].Caption) + '"';
+      end;
+    end, TIMEOUT_INTERFACE) then
+  begin
+    respondeV2Ocupado(AResponseInfo, acao);
+    Exit;
+  end;
+
+  if (acaoPedida = 'participants') then
+  begin
+    //Lista de verdade. Na v1 os nomes vinham grudados num único texto
+    //separado por vírgula, o que quebra em nome que contenha vírgula.
+    respondeV2Ok(AResponseInfo, acao, 'PARTICIPANTS', '',
+      '"count":' + IntToStr(totalParticipantes) +
+      ',"participants":[' + participantes + ']');
+    Exit;
+  end;
+
+  respondeV2Ok(AResponseInfo, acao,
+    IfThen(sorteando, 'DRAWING_IN_PROGRESS', 'DRAWING_IDLE'), '',
+    '"drawing":' + IfThen(sorteando, 'true', 'false') +
+    ',"last":"' + escapaJson(ultimo) + '"' +
+    ',"count":' + IntToStr(totalParticipantes) +
+    ',"drawn":[' + sorteados + ']');
+end;
+
+{
+  Documentação da API, em página legível.
+
+  É a única rota da v2 que não responde JSON, e isso é proposital: ela existe
+  para ser lida por gente, no navegador. O conteúdo mora em server/api-v2.html,
+  na pasta de configuração, junto com as demais páginas que o programa serve -
+  assim dá para corrigir um texto sem recompilar.
+}
+procedure TfTransmitir.v2Docs(ARequestInfo: TIdHTTPRequestInfo;
+  AResponseInfo: TIdHTTPResponseInfo; const acao: string);
+var
+  caminho, conteudo: string;
+begin
+  if not v2ExigeMetodo(ARequestInfo, AResponseInfo, acao, 'GET') then
+    Exit;
+
+  caminho := fmIndex.dir_config + 'server\api-v2.html';
+
+  if not FileExists(caminho) then
+  begin
+    respondeV2Erro(AResponseInfo, 404, acao, 'DOCS_NOT_FOUND',
+      'Documentação não encontrada. Copie api-v2.html para a pasta server.');
+    Exit;
+  end;
+
+  try
+    conteudo := TFile.ReadAllText(caminho, TEncoding.UTF8);
+  except
+    on E: Exception do
+    begin
+      respondeV2Erro(AResponseInfo, 500, acao, 'DOCS_READ_ERROR',
+        'Não foi possível ler a documentação: ' + E.Message);
+      Exit;
+    end;
+  end;
+
+  AResponseInfo.ContentType := 'text/html';
+  AResponseInfo.CharSet := 'utf-8';
+  AResponseInfo.ResponseNo := 200;
+  AResponseInfo.ContentText := conteudo;
+end;
+
+{
+  Reprodução: expõe o painel de mídia do programa.
+
+  O painel controla tanto o player de arquivos (MediaPlayer1, via MCI) quanto
+  o vídeo online (WebView2). Qual dos dois está no ar vem de origemPlayer, o
+  mesmo campo que os botões da tela consultam.
+
+  Os botões da tela alternam estado antes de agir: chamar o handler com o
+  botão solto apenas o marca e sai, sem tocar no player. Por isso o estado é
+  ajustado antes de acionar o handler.
+}
+procedure TfTransmitir.v2Media(ARequestInfo: TIdHTTPRequestInfo;
+  AResponseInfo: TIdHTTPResponseInfo; const acao: string);
+var
+  acaoPedida, arquivo: string;
+  ativo, tocando, ehYoutube: Boolean;
+  posicao, duracao, destino: Integer;
+begin
+  acaoPedida := v2Acao(ARequestInfo);
+
+  if (acaoPedida = 'status') then
+  begin
+    if not v2ExigeMetodo(ARequestInfo, AResponseInfo, acao, 'GET') then
+      Exit;
+  end
+  else if (acaoPedida = 'play') or (acaoPedida = 'pause') or
+          (acaoPedida = 'close') or (acaoPedida = 'seek') then
+  begin
+    if not v2ExigeMetodo(ARequestInfo, AResponseInfo, acao, 'POST') then
+      Exit;
+  end
+  else
+  begin
+    respondeV2AcaoInvalida(AResponseInfo, acao,
+      'status (GET); play, pause, seek, close (POST)');
+    Exit;
+  end;
+
+  destino := -1;
+  if (acaoPedida = 'seek') then
+  begin
+    //Aceita segundos, que é o que o cliente costuma ter em mãos
+    destino := Round(StrToFloatDef(
+      StringReplace(Trim(v2Param(ARequestInfo, 'seconds')), ',', '.', []),
+      -1, TFormatSettings.Invariant) * 1000);
+
+    if (destino < 0) then
+    begin
+      respondeV2Erro(AResponseInfo, 400, acao, 'INVALID_POSITION',
+        'Informe em seconds a posição desejada, em segundos');
+      Exit;
+    end;
+  end;
+
+  ativo := False;
+  tocando := False;
+  arquivo := '';
+  posicao := 0;
+  duracao := 0;
+
+  if not executaNaInterface(
+    procedure
+    begin
+      //O painel visível é o que indica haver reprodução em curso; origemPlayer
+      //diz se quem toca é o arquivo local ou o vídeo online
+      ehYoutube := (fmIndex.origemPlayer = 'YOUTUBE');
+      ativo := fmIndex.pnlPlayer.Visible;
+
+      if ativo and (acaoPedida <> 'status') then
+      begin
+        if (acaoPedida = 'play') then
+        begin
+          fmIndex.btplPlay.Down := True;
+          fmIndex.btplPlayClick(nil);
+        end
+        else if (acaoPedida = 'pause') then
+        begin
+          fmIndex.btplPause.Down := True;
+          fmIndex.btplPauseClick(nil);
+        end
+        else if (acaoPedida = 'close') then
+          fmIndex.btplFecharClick(nil)
+        else
+        begin
+          //Mesma sequência do clique na barra de progresso
+          DM.tmrPlayer.Enabled := False;
+          if ehYoutube then
+          begin
+            if (fVideoOn <> nil) then
+            begin
+              fVideoOn.buscaSegundos(destino / 1000);
+              if fmIndex.btplPlay.Down then
+                fVideoOn.reproduz;
+            end;
+          end
+          else
+          begin
+            fmIndex.MediaPlayer1.Position := destino;
+            if fmIndex.btplPlay.Down then
+              fmIndex.MediaPlayer1.Play;
+          end;
+          DM.tmrPlayer.Enabled := True;
+        end;
+      end;
+
+      ativo := fmIndex.pnlPlayer.Visible;
+      if ativo then
+      begin
+        arquivo := fmIndex.lblPlayer.Caption;
+        //Vídeo online: estado e tempo vêm do navegador, em segundos; o player
+        //de arquivos responde em milissegundos
+        if ehYoutube and (fVideoOn <> nil) then
+        begin
+          tocando := fVideoOn.tocando;
+          posicao := Round(fVideoOn.tempoAtual * 1000);
+          duracao := Round(fVideoOn.duracao * 1000);
+        end
+        else
+        begin
+          tocando := (fmIndex.MediaPlayer1.Mode = mpPlaying);
+          posicao := fmIndex.MediaPlayer1.Position;
+          duracao := fmIndex.MediaPlayer1.Length;
+        end;
+      end;
+    end, TIMEOUT_COMANDO) then
+  begin
+    respondeV2Ocupado(AResponseInfo, acao);
+    Exit;
+  end;
+
+  if not ativo then
+  begin
+    if (acaoPedida = 'status') then
+      respondeV2Ok(AResponseInfo, acao, 'NO_MEDIA', 'Nada em reprodução',
+        '"active":false')
+    else
+      respondeV2Erro(AResponseInfo, 409, acao, 'NO_MEDIA',
+        'Nada em reprodução');
+    Exit;
+  end;
+
+  respondeV2Ok(AResponseInfo, acao,
+    IfThen(tocando, 'MEDIA_PLAYING', 'MEDIA_PAUSED'), '',
+    '"active":true' +
+    ',"playing":' + IfThen(tocando, 'true', 'false') +
+    ',"file":"' + escapaJson(arquivo) + '"' +
+    ',"position":' + FormatFloat('0.###', posicao / 1000, TFormatSettings.Invariant) +
+    ',"duration":' + FormatFloat('0.###', duracao / 1000, TFormatSettings.Invariant));
+end;
+
+{
+  Vídeos online: navegação por canal, playlist e vídeo, e abertura de um deles.
+
+  As listagens saem direto do banco, como as da bíblia: consultar não depende
+  de o operador ter aberto a aba nem mexe no que ele está vendo. Abrir usa o
+  abreVideoOn do programa, que é o mesmo caminho do clique na tela.
+}
+procedure TfTransmitir.v2OnlineVideos(ARequestInfo: TIdHTTPRequestInfo;
+  AResponseInfo: TIdHTTPResponseInfo; const acao: string);
+var
+  acaoPedida, canal, playlist, video, titulo, dados: string;
+  achou: Boolean;
+begin
+  acaoPedida := v2Acao(ARequestInfo);
+
+  canal := Trim(v2Param(ARequestInfo, 'channel'));
+  playlist := Trim(v2Param(ARequestInfo, 'playlist'));
+  video := Trim(v2Param(ARequestInfo, 'id'));
+
+  // ---- abrir ----
+  if (acaoPedida = 'open') then
+  begin
+    if not v2ExigeMetodo(ARequestInfo, AResponseInfo, acao, 'POST') then
+      Exit;
+
+    if (video = '') then
+    begin
+      respondeV2Erro(AResponseInfo, 400, acao, 'MISSING_ID',
+        'Informe em id o código do vídeo, obtido em action=videos');
+      Exit;
+    end;
+
+    titulo := Trim(v2Param(ARequestInfo, 'title'));
+    achou := False;
+
+    if not executaNaInterface(
+      procedure
+      var
+        consulta: TFDQuery;
+      begin
+        //Sem título informado busca o nome cadastrado, para a janela do vídeo
+        //aparecer identificada como quando é aberta pela tela
+        if (titulo = '') then
+        begin
+          consulta := TFDQuery.Create(nil);
+          try
+            consulta.Connection := DM.ADO;
+            consulta.SQL.Text :=
+              'SELECT NOME FROM ONL_VIDEOS WHERE VIDEO_ID = :ID';
+            consulta.ParamByName('ID').AsString := video;
+            consulta.Open;
+            if not consulta.IsEmpty then
+            begin
+              titulo := consulta.FieldByName('NOME').AsString;
+              achou := True;
+            end;
+          finally
+            consulta.Free;
+          end;
+        end
+        else
+          achou := True;
+
+        fmIndex.abreVideoOn(video, titulo);
+      end, TIMEOUT_COMANDO) then
+    begin
+      respondeV2Ocupado(AResponseInfo, acao);
+      Exit;
+    end;
+
+    //Vídeo fora do catálogo é aceito de propósito: o identificador do YouTube
+    //vale por si, e a tela também abre vídeo avulso
+    respondeV2Ok(AResponseInfo, acao, 'VIDEO_OPENED', '',
+      '"id":"' + escapaJson(video) + '"' +
+      ',"title":"' + escapaJson(titulo) + '"' +
+      ',"in_catalog":' + IfThen(achou, 'true', 'false'));
+    Exit;
+  end;
+
+  // ---- listagens ----
+  if (acaoPedida <> 'channels') and (acaoPedida <> 'playlists') and
+     (acaoPedida <> 'videos') then
+  begin
+    respondeV2AcaoInvalida(AResponseInfo, acao,
+      'channels, playlists, videos (GET); open (POST)');
+    Exit;
+  end;
+
+  if not v2ExigeMetodo(ARequestInfo, AResponseInfo, acao, 'GET') then
+    Exit;
+
+  if (acaoPedida = 'playlists') and (canal = '') then
+  begin
+    respondeV2Erro(AResponseInfo, 400, acao, 'MISSING_CHANNEL',
+      'Informe em channel o código do canal, obtido em action=channels');
+    Exit;
+  end;
+
+  if (acaoPedida = 'videos') and (playlist = '') then
+  begin
+    respondeV2Erro(AResponseInfo, 400, acao, 'MISSING_PLAYLIST',
+      'Informe em playlist o código da playlist, obtido em action=playlists');
+    Exit;
+  end;
+
+  dados := '';
+
+  if not executaNaInterface(
+    procedure
+    var
+      consulta: TFDQuery;
+      lista, sql: string;
+    begin
+      if (acaoPedida = 'channels') then
+        sql := 'SELECT CANAL_ID, NOME FROM ONL_CANAIS ORDER BY NOME'
+      else if (acaoPedida = 'playlists') then
+        sql := 'SELECT PLAYLIST_ID, NOME FROM ONL_PLAYLISTS' +
+               ' WHERE CANAL_ID = :CANAL ORDER BY NOME'
+      else
+        sql := 'SELECT VIDEO_ID, NOME FROM ONL_VIDEOS' +
+               ' WHERE PLAYLIST_ID = :PLAYLIST ORDER BY POSICAO, NOME';
+
+      lista := '';
+      consulta := TFDQuery.Create(nil);
+      try
+        consulta.Connection := DM.ADO;
+        consulta.SQL.Text := sql;
+        if (consulta.Params.FindParam('CANAL') <> nil) then
+          consulta.ParamByName('CANAL').AsString := canal;
+        if (consulta.Params.FindParam('PLAYLIST') <> nil) then
+          consulta.ParamByName('PLAYLIST').AsString := playlist;
+        consulta.Open;
+
+        while not consulta.Eof do
+        begin
+          if (lista <> '') then
+            lista := lista + ',';
+
+          if (acaoPedida = 'channels') then
+            lista := lista +
+              '{"id":"' + escapaJson(consulta.FieldByName('CANAL_ID').AsString) + '"'
+          else if (acaoPedida = 'playlists') then
+            lista := lista +
+              '{"id":"' + escapaJson(consulta.FieldByName('PLAYLIST_ID').AsString) + '"'
+          else
+            lista := lista +
+              '{"id":"' + escapaJson(consulta.FieldByName('VIDEO_ID').AsString) + '"';
+
+          lista := lista +
+            ',"nome":"' + escapaJson(consulta.FieldByName('NOME').AsString) + '"}';
+
+          consulta.Next;
+        end;
+      finally
+        consulta.Free;
+      end;
+
+      if (acaoPedida = 'channels') then
+        dados := '"channels":[' + lista + ']'
+      else if (acaoPedida = 'playlists') then
+        dados := '"channel":"' + escapaJson(canal) + '","playlists":[' + lista + ']'
+      else
+        dados := '"playlist":"' + escapaJson(playlist) + '","videos":[' + lista + ']';
+    end, TIMEOUT_INTERFACE) then
+  begin
+    respondeV2Ocupado(AResponseInfo, acao);
+    Exit;
+  end;
+
+  respondeV2Ok(AResponseInfo, acao,
+    'ONLINE_' + UpperCase(acaoPedida), '', dados);
+end;
+
+{
+  Versão bíblica em uso.
+
+  Enquanto a aba não foi aberta o estado em memória está vazio, e vale o que
+  está gravado nas opções. Num programa que nunca exibiu a bíblia nem isso
+  existe - e sem versão as consultas de capítulo e versículo voltam vazias.
+  Por isso, em último caso, usa-se a primeira versão instalada.
+
+  Deve rodar na thread da interface.
+}
+function TfTransmitir.versaoBiblia: string;
+var
+  consulta: TFDQuery;
+begin
+  Result := Trim(fmIndex.loadCol.Strings.Values['BIBLIA_VERSAO']);
+  if (Result <> '') then
+    Exit;
+
+  Result := Trim(fmIndex.lerParam('Biblia', 'Versão', ''));
+  if (Result <> '') then
+    Exit;
+
+  consulta := TFDQuery.Create(nil);
+  try
+    consulta.Connection := DM.ADO;
+    consulta.SQL.Text :=
+      'SELECT SIGLA FROM VERSAO_BIBLICA ORDER BY VERSAO LIMIT 1';
+    consulta.Open;
+    if not consulta.IsEmpty then
+      Result := Trim(consulta.FieldByName('SIGLA').AsString);
+  finally
+    consulta.Free;
+  end;
+end;
+
+{
+  Bíblia.
+
+  As listagens saem direto do banco, sem passar pelas consultas da tela: assim
+  consultar pela API não depende de a aba ter sido aberta, e não mexe no que o
+  operador está vendo. Exibir um versículo, ao contrário, percorre a mesma
+  cadeia de cliques do programa.
+}
+procedure TfTransmitir.v2Bible(ARequestInfo: TIdHTTPRequestInfo;
+  AResponseInfo: TIdHTTPResponseInfo; const acao: string);
+var
+  acaoPedida, versao, dados, sql: string;
+  livro, capitulo: Integer;
+begin
+  acaoPedida := v2Acao(ARequestInfo);
+
+  if (acaoPedida = 'show') then
+  begin
+    if not v2ExigeMetodo(ARequestInfo, AResponseInfo, acao, 'POST') then
+      Exit;
+    v2BibleExibe(ARequestInfo, AResponseInfo, acao);
+    Exit;
+  end;
+
+  if (acaoPedida = 'next') or (acaoPedida = 'previous') then
+  begin
+    if not v2ExigeMetodo(ARequestInfo, AResponseInfo, acao, 'POST') then
+      Exit;
+    v2BibleNavega(AResponseInfo, acao, acaoPedida);
+    Exit;
+  end;
+
+  if (acaoPedida <> 'status') and (acaoPedida <> 'versions') and
+     (acaoPedida <> 'books') and (acaoPedida <> 'chapters') and
+     (acaoPedida <> 'verses') then
+  begin
+    respondeV2AcaoInvalida(AResponseInfo, acao,
+      'status, versions, books, chapters, verses (GET); ' +
+      'show, next, previous (POST)');
+    Exit;
+  end;
+
+  if not v2ExigeMetodo(ARequestInfo, AResponseInfo, acao, 'GET') then
+    Exit;
+
+  livro := StrToIntDef(Trim(v2Param(ARequestInfo, 'book')), 0);
+  capitulo := StrToIntDef(Trim(v2Param(ARequestInfo, 'chapter')), 0);
+  versao := Trim(v2Param(ARequestInfo, 'version'));
+
+  if (acaoPedida = 'chapters') and (livro <= 0) then
+  begin
+    respondeV2Erro(AResponseInfo, 400, acao, 'MISSING_BOOK',
+      'Informe em book o código do livro, obtido em action=books');
+    Exit;
+  end;
+
+  if (acaoPedida = 'verses') and ((livro <= 0) or (capitulo <= 0)) then
+  begin
+    respondeV2Erro(AResponseInfo, 400, acao, 'MISSING_CHAPTER',
+      'Informe book e chapter');
+    Exit;
+  end;
+
+  dados := '';
+
+  if not executaNaInterface(
+    procedure
+    var
+      consulta: TFDQuery;
+      lista: string;
+    begin
+      if (versao = '') then
+        versao := versaoBiblia;
+
+      if (acaoPedida = 'status') then
+      begin
+        dados :=
+          '"version":"' + escapaJson(versaoBiblia) + '"' +
+          ',"book":' + StrToIntDef(fmIndex.loadCol.Strings.Values['BIBLIA_LIVRO'], 0).ToString +
+          ',"book_name":"' + escapaJson(fmIndex.loadCol.Strings.Values['BIBLIA_LIVRO_NOME']) + '"' +
+          ',"chapter":' + StrToIntDef(fmIndex.loadCol.Strings.Values['BIBLIA_CAPITULO'], 0).ToString +
+          ',"verse":' + StrToIntDef(fmIndex.loadCol.Strings.Values['BIBLIA_VERSICULO'], 0).ToString +
+          ',"text":"' + escapaJson(fmIndex.lmdBibliaTxt.Caption) + '"' +
+          ',"reference":"' + escapaJson(fmIndex.lmdBibliaInfo.Caption) + '"' +
+          //Enquanto a aba não foi aberta o programa ainda não escolheu versão
+          ',"ready":' + IfThen(
+            fmIndex.loadCol.Strings.Values['BIBLIA_F'] = 'okf', 'true', 'false');
+        Exit;
+      end;
+
+      if (acaoPedida = 'versions') then
+        //A tabela guarda o código em SIGLA e o nome por extenso em VERSAO
+        sql := 'SELECT SIGLA, VERSAO FROM VERSAO_BIBLICA ORDER BY VERSAO'
+      else if (acaoPedida = 'books') then
+        sql := 'SELECT ID, LIVRO, SIGLA, CAPITULOS FROM LIVRO ORDER BY ID'
+      else if (acaoPedida = 'chapters') then
+        sql := 'SELECT DISTINCT CAPITULO FROM BIBLIA' +
+               ' WHERE LIVRO = :LIVRO AND VERSAO = :VERSAO ORDER BY CAPITULO'
+      else
+        //A coluna é PASSAGEM; PASSAGEM_ORI é apelido que a consulta da tela
+        //cria, e não existe na tabela
+        sql := 'SELECT VERSICULO, PASSAGEM FROM BIBLIA' +
+               ' WHERE LIVRO = :LIVRO AND VERSAO = :VERSAO AND CAPITULO = :CAPITULO' +
+               ' ORDER BY VERSICULO';
+
+      lista := '';
+      consulta := TFDQuery.Create(nil);
+      try
+        consulta.Connection := DM.ADO;
+        consulta.SQL.Text := sql;
+        if (consulta.Params.FindParam('LIVRO') <> nil) then
+          consulta.ParamByName('LIVRO').AsInteger := livro;
+        if (consulta.Params.FindParam('VERSAO') <> nil) then
+          consulta.ParamByName('VERSAO').AsString := versao;
+        if (consulta.Params.FindParam('CAPITULO') <> nil) then
+          consulta.ParamByName('CAPITULO').AsInteger := capitulo;
+        consulta.Open;
+
+        while not consulta.Eof do
+        begin
+          if (lista <> '') then
+            lista := lista + ',';
+
+          if (acaoPedida = 'versions') then
+            lista := lista +
+              '{"sigla":"' + escapaJson(consulta.FieldByName('SIGLA').AsString) + '"' +
+              ',"nome":"' + escapaJson(consulta.FieldByName('VERSAO').AsString) + '"}'
+          else if (acaoPedida = 'books') then
+            lista := lista +
+              '{"id":' + consulta.FieldByName('ID').AsString +
+              ',"nome":"' + escapaJson(consulta.FieldByName('LIVRO').AsString) + '"' +
+              ',"sigla":"' + escapaJson(consulta.FieldByName('SIGLA').AsString) + '"' +
+              ',"capitulos":' + consulta.FieldByName('CAPITULOS').AsString + '}'
+          else if (acaoPedida = 'chapters') then
+            lista := lista + consulta.FieldByName('CAPITULO').AsString
+          else
+            lista := lista +
+              '{"versiculo":' + consulta.FieldByName('VERSICULO').AsString +
+              ',"texto":"' + escapaJson(
+                fmIndex.removeTagsHTML(consulta.FieldByName('PASSAGEM').AsString)) + '"}';
+
+          consulta.Next;
+        end;
+      finally
+        consulta.Free;
+      end;
+
+      dados := '"version":"' + escapaJson(versao) + '",';
+      if (acaoPedida = 'versions') then
+        dados := dados + '"versions":[' + lista + ']'
+      else if (acaoPedida = 'books') then
+        dados := dados + '"books":[' + lista + ']'
+      else if (acaoPedida = 'chapters') then
+        dados := dados + '"book":' + IntToStr(livro) + ',"chapters":[' + lista + ']'
+      else
+        dados := dados + '"book":' + IntToStr(livro) +
+          ',"chapter":' + IntToStr(capitulo) + ',"verses":[' + lista + ']';
+    end, TIMEOUT_INTERFACE) then
+  begin
+    respondeV2Ocupado(AResponseInfo, acao);
+    Exit;
+  end;
+
+  respondeV2Ok(AResponseInfo, acao, 'BIBLE_' + UpperCase(acaoPedida), '', dados);
+end;
+
+{
+  Exibe um versículo.
+
+  Percorre a mesma cadeia de cliques que o operador dispara na tela, para não
+  existir uma segunda versão da lógica: o clique no livro carrega os capítulos,
+  o clique no capítulo carrega os versículos, e o clique no versículo é quem
+  projeta, grava as opções e alimenta o histórico.
+
+  Antes disso o estado da bíblia precisa existir: sem inicializar, o programa
+  ainda não escolheu versão nem livro, e as consultas voltariam vazias.
+}
+procedure TfTransmitir.v2BibleExibe(ARequestInfo: TIdHTTPRequestInfo;
+  AResponseInfo: TIdHTTPResponseInfo; const acao: string);
+var
+  livro, capitulo, versiculo: Integer;
+  achouLivro, achouCap, achouVers: Boolean;
+  referencia, texto: string;
+begin
+  livro := StrToIntDef(Trim(v2Param(ARequestInfo, 'book')), 0);
+  capitulo := StrToIntDef(Trim(v2Param(ARequestInfo, 'chapter')), 0);
+  versiculo := StrToIntDef(Trim(v2Param(ARequestInfo, 'verse')), 1);
+
+  if (livro <= 0) or (capitulo <= 0) or (versiculo <= 0) then
+  begin
+    respondeV2Erro(AResponseInfo, 400, acao, 'INVALID_REFERENCE',
+      'Informe book, chapter e verse com números maiores que zero');
+    Exit;
+  end;
+
+  achouLivro := False;
+  achouCap := False;
+  achouVers := False;
+  referencia := '';
+  texto := '';
+
+  if not executaNaInterface(
+    procedure
+    begin
+      if (fmIndex.loadCol.Strings.Values['BIBLIA_F'] <> 'okf') then
+        //Só o estado: tsBibliaShow também troca a aba visível do programa, e
+        //a API não deve mexer no que o operador está vendo
+        fmIndex.inicializaBiblia;
+
+      fmIndex.carregaBiblia('LIV');
+      achouLivro := DM.qrBIBLIA_LIVROS.Locate('ID', livro, []);
+      if not achouLivro then
+        Exit;
+
+      //O clique no livro já carrega os capítulos e clica no capítulo indicado
+      fmIndex.loadCol.Strings.Values['BIBLIA_CAPITULO'] := IntToStr(capitulo);
+      fmIndex.DBCtrlGridBibliaLivroClick(nil);
+
+      achouCap := DM.qrBIBLIA_CAPITULOS.Locate('CAPITULO', capitulo, []);
+      if not achouCap then
+        Exit;
+
+      achouVers := DM.qrBIBLIA_VERSICULOS.Locate('VERSICULO', versiculo, []);
+      if not achouVers then
+        Exit;
+
+      fmIndex.DBCtrlGridBibliaVersiculoClick(nil);
+
+      referencia := fmIndex.lmdBibliaInfo.Caption;
+      texto := fmIndex.lmdBibliaTxt.Caption;
+    end, TIMEOUT_COMANDO) then
+  begin
+    respondeV2Ocupado(AResponseInfo, acao);
+    Exit;
+  end;
+
+  if not achouLivro then
+  begin
+    respondeV2Erro(AResponseInfo, 404, acao, 'BOOK_NOT_FOUND',
+      'Livro não encontrado');
+    Exit;
+  end;
+
+  if not achouCap then
+  begin
+    respondeV2Erro(AResponseInfo, 404, acao, 'CHAPTER_NOT_FOUND',
+      'Capítulo não encontrado neste livro');
+    Exit;
+  end;
+
+  if not achouVers then
+  begin
+    respondeV2Erro(AResponseInfo, 404, acao, 'VERSE_NOT_FOUND',
+      'Versículo não encontrado neste capítulo');
+    Exit;
+  end;
+
+  respondeV2Ok(AResponseInfo, acao, 'VERSE_SHOWN', '',
+    '"book":' + IntToStr(livro) +
+    ',"chapter":' + IntToStr(capitulo) +
+    ',"verse":' + IntToStr(versiculo) +
+    ',"reference":"' + escapaJson(referencia) + '"' +
+    ',"text":"' + escapaJson(texto) + '"');
+end;
+
+{
+  Versículo seguinte ou anterior, virando capítulo e livro quando chega ao fim.
+  São os mesmos botões da tela.
+}
+procedure TfTransmitir.v2BibleNavega(AResponseInfo: TIdHTTPResponseInfo;
+  const acao, acaoPedida: string);
+var
+  pronto: Boolean;
+  referencia, texto: string;
+begin
+  pronto := False;
+  referencia := '';
+  texto := '';
+
+  if not executaNaInterface(
+    procedure
+    begin
+      //Sem um versículo exibido antes não há de onde avançar
+      pronto := (fmIndex.loadCol.Strings.Values['BIBLIA_F'] = 'okf') and
+                (Trim(fmIndex.loadCol.Strings.Values['BIBLIA_P_VERSICULO']) <> '');
+      if not pronto then
+        Exit;
+
+      if (acaoPedida = 'next') then
+        fmIndex.btBibVersSegClick(nil)
+      else
+        fmIndex.btBibVersAntClick(nil);
+
+      referencia := fmIndex.lmdBibliaInfo.Caption;
+      texto := fmIndex.lmdBibliaTxt.Caption;
+    end, TIMEOUT_COMANDO) then
+  begin
+    respondeV2Ocupado(AResponseInfo, acao);
+    Exit;
+  end;
+
+  if not pronto then
+  begin
+    respondeV2Erro(AResponseInfo, 409, acao, 'NO_VERSE_SHOWN',
+      'Nenhum versículo exibido ainda. Use action=show primeiro.');
+    Exit;
+  end;
+
+  respondeV2Ok(AResponseInfo, acao, 'VERSE_SHOWN', '',
+    '"reference":"' + escapaJson(referencia) + '"' +
+    ',"text":"' + escapaJson(texto) + '"');
+end;
+
+{
+  Liturgia: lista os itens do dia e abre um deles.
+
+  A lista é lida direto do liturgia.ja, e não dos painéis da tela. Isso é
+  proposital: os painéis só passam a existir quando o operador abre a aba
+  Liturgia pela primeira vez - tsLiturgiaShow atribui cbBloqItens.Checked,
+  o que dispara cbBloqItensClick, que chama LiturgiaCalendarClick e só então
+  monta os itens. Lendo do arquivo, consultar pela API funciona com o programa
+  recém-aberto.
+
+  Abrir um item, ao contrário, depende dos painéis, porque reaproveita o mesmo
+  handler que o clique do operador usa. Por isso v2LiturgyAbre garante o
+  carregamento antes.
+}
+procedure TfTransmitir.v2Liturgy(ARequestInfo: TIdHTTPRequestInfo;
+  AResponseInfo: TIdHTTPResponseInfo; const acao: string);
+var
+  acaoPedida, itens, semanaTxt: string;
+  semana, total: Integer;
+begin
+  acaoPedida := v2Acao(ARequestInfo);
+
+  if (acaoPedida = 'open') then
+  begin
+    if not v2ExigeMetodo(ARequestInfo, AResponseInfo, acao, 'POST') then
+      Exit;
+    v2LiturgyAbre(ARequestInfo, AResponseInfo, acao);
+    Exit;
+  end;
+
+  if (acaoPedida <> 'list') then
+  begin
+    respondeV2AcaoInvalida(AResponseInfo, acao, 'list (GET); open (POST)');
+    Exit;
+  end;
+
+  if not v2ExigeMetodo(ARequestInfo, AResponseInfo, acao, 'GET') then
+    Exit;
+
+  //Dia da semana no formato do programa: 1 = domingo ... 7 = sábado
+  semanaTxt := Trim(v2Param(ARequestInfo, 'week'));
+  if (semanaTxt = '') then
+    semana := 0
+  else
+  begin
+    semana := StrToIntDef(semanaTxt, -1);
+    if (semana < 1) or (semana > 7) then
+    begin
+      respondeV2Erro(AResponseInfo, 400, acao, 'INVALID_WEEK',
+        'Parâmetro week deve ser de 1 (domingo) a 7 (sábado)');
+      Exit;
+    end;
+  end;
+
+  itens := '';
+  total := 0;
+
+  if not executaNaInterface(
+    procedure
+    var
+      lista: TStringList;
+      consulta: TFDQuery;
+      i, idMusica: Integer;
+      chave, tipo, marcado, extra: string;
+      temPlayback, escolhe: Boolean;
+    begin
+      //Sem week explícito usa o dia que a tela está mostrando, ou hoje
+      if (semana = 0) then
+      begin
+        semana := StrToIntDef(
+          fmIndex.loadCol.Strings.Values['LITURGIA:SEMANA'], 0);
+        if (semana < 1) or (semana > 7) then
+          semana := DayOfWeek(Now);
+      end;
+
+      lista := TStringList.Create;
+      try
+        lista.Delimiter := ';';
+        lista.StrictDelimiter := True;
+        lista.DelimitedText :=
+          fmIndex.lerParam('Geral', IntToStr(semana), '', fmIndex.arq_liturgia);
+
+        for i := 0 to lista.Count - 1 do
+        begin
+          chave := Trim(lista[i]);
+          if (chave = '') then
+            Continue;
+
+          tipo := fmIndex.lerParam(chave, 'tipo', '', fmIndex.arq_liturgia);
+          //O programa marca a conclusão gravando a data do dia
+          marcado := fmIndex.lerParam(chave, 'checked', '', fmIndex.arq_liturgia);
+
+          extra := '';
+          if (tipo = 'musica') then
+          begin
+            idMusica := StrToIntDef(
+              fmIndex.lerParam(chave, 'musica', '0', fmIndex.arq_liturgia), 0);
+            //escolha=1: o item não fixa a música, ela é escolhida ao abrir
+            escolhe := (fmIndex.lerParam(chave, 'escolha', '0', fmIndex.arq_liturgia) = '1');
+
+            {
+              Mesma regra que o programa usa para decidir se mostra o ícone de
+              playback: música indefinida (-1) ou não encontrada valem como
+              disponível, senão depende de URL_INSTRUMENTAL estar preenchido.
+            }
+            if (idMusica = -1) then
+              temPlayback := True
+            else
+            begin
+              temPlayback := True;
+              consulta := TFDQuery.Create(nil);
+              try
+                consulta.Connection := DM.ADO;
+                consulta.SQL.Text :=
+                  'SELECT URL_INSTRUMENTAL FROM LISTA_MUSICAS WHERE ID = :ID';
+                consulta.ParamByName('ID').AsInteger := idMusica;
+                consulta.Open;
+                if not consulta.IsEmpty then
+                  temPlayback :=
+                    (Trim(consulta.FieldByName('URL_INSTRUMENTAL').AsString) <> '');
+              finally
+                consulta.Free;
+              end;
+            end;
+
+            extra :=
+              ',"song_id":' + IntToStr(idMusica) +
+              ',"choose_song":' + IfThen(escolhe, 'true', 'false') +
+              ',"has_playback":' + IfThen(temPlayback, 'true', 'false');
+          end;
+
+          if (itens <> '') then
+            itens := itens + ',';
+
+          itens := itens +
+            '{"id":"' + escapaJson(chave) + '"' +
+            ',"type":"' + escapaJson(tipo) + '"' +
+            ',"title":"' + escapaJson(
+              fmIndex.lerParam(chave, 'item', '', fmIndex.arq_liturgia)) + '"' +
+            ',"subtitle":"' + escapaJson(
+              fmIndex.lerParam(chave, 'subitem', '', fmIndex.arq_liturgia)) + '"' +
+            ',"done":' + IfThen(
+              marcado = FormatDateTime('dd/mm/yyyy', Now), 'true', 'false') +
+            extra +
+            '}';
+
+          Inc(total);
+        end;
+      finally
+        lista.Free;
+      end;
+    end, TIMEOUT_INTERFACE) then
+  begin
+    respondeV2Ocupado(AResponseInfo, acao);
+    Exit;
+  end;
+
+  respondeV2Ok(AResponseInfo, acao, 'LITURGY_LIST', '',
+    '"week":' + IntToStr(semana) +
+    ',"count":' + IntToStr(total) +
+    ',"items":[' + itens + ']');
+end;
+
+//Em que dia da semana o item está. Zero quando não aparece em nenhum.
+function TfTransmitir.v2LiturgyDiaDoItem(const chave: string): Integer;
+var
+  lista: TStringList;
+  dia, i: Integer;
+begin
+  Result := 0;
+  lista := TStringList.Create;
+  try
+    lista.Delimiter := ';';
+    for dia := 1 to 7 do
+    begin
+      lista.DelimitedText :=
+        fmIndex.lerParam('Geral', IntToStr(dia), '', fmIndex.arq_liturgia);
+      for i := 0 to lista.Count - 1 do
+        if SameText(Trim(lista[i]), chave) then
+          Exit(dia);
+    end;
+  finally
+    lista.Free;
+  end;
+end;
+
+{
+  Abre um item da liturgia.
+
+  Reaproveita lit_modItem_textoClick, o mesmo handler do clique do operador,
+  para que a API não tenha uma segunda versão da lógica que possa divergir.
+  Esse handler descobre o item pelo nome do painel e escolhe a variante pelo
+  Tag do componente clicado, então aqui o Tag é ajustado e devolvido ao valor
+  original em seguida.
+}
+procedure TfTransmitir.v2LiturgyAbre(ARequestInfo: TIdHTTPRequestInfo;
+  AResponseInfo: TIdHTTPResponseInfo; const acao: string);
+var
+  chave, modo, tipo: string;
+  marca: Integer;
+  achou, ehCategoria: Boolean;
+begin
+  chave := Trim(v2Param(ARequestInfo, 'id'));
+  if (chave = '') then
+  begin
+    respondeV2Erro(AResponseInfo, 400, acao, 'MISSING_ID',
+      'Informe em id a chave do item, obtida em action=list');
+    Exit;
+  end;
+
+  modo := LowerCase(Trim(v2Param(ARequestInfo, 'mode')));
+  if (modo = '') then
+    modo := 'normal';
+
+  //As variantes valem para item do tipo música e correspondem ao Tag que o
+  //programa usa em cada ícone da linha
+  if (modo = 'normal') then marca := 0
+  else if (modo = 'pb') then marca := 2
+  else if (modo = 'no-audio') then marca := 3
+  else if (modo = 'file') then marca := 4
+  else if (modo = 'playback') then marca := 5
+  else
+  begin
+    respondeV2Erro(AResponseInfo, 400, acao, 'INVALID_MODE',
+      'Parâmetro mode deve ser normal, pb, no-audio, file ou playback');
+    Exit;
+  end;
+
+  achou := False;
+  ehCategoria := False;
+  tipo := '';
+
+  if not executaNaInterface(
+    procedure
+    var
+      alvo: TComponent;
+      tagOriginal, diaItem: Integer;
+    begin
+      tipo := fmIndex.lerParam(chave, 'tipo', '', fmIndex.arq_liturgia);
+      ehCategoria := (tipo = 'categoria');
+      if (tipo = '') or ehCategoria then
+        Exit;
+
+      {
+        Os painéis só existem depois que a liturgia daquele dia é montada, e
+        comandar pela API não pode depender de o operador ter aberto a aba.
+
+        Monta-se o dia a que o item pertence, não o de hoje: a liturgia
+        costuma estar preenchida no sábado, e montar hoje deixaria o item de
+        outro dia sem painel. O dia é descoberto procurando a chave nas listas
+        de 1 a 7 do próprio arquivo.
+      }
+      if (fmIndex.FindComponent(chave + '_texto') = nil) then
+      begin
+        diaItem := v2LiturgyDiaDoItem(chave);
+        if (diaItem > 0) then
+        begin
+          fmIndex.loadCol.Strings.Values['LITURGIA:SEMANA'] := IntToStr(diaItem);
+          fmIndex.carregaLiturgia(diaItem);
+        end;
+      end;
+
+      alvo := fmIndex.FindComponent(chave + '_texto');
+      if (alvo = nil) then
+        Exit;
+
+      achou := True;
+
+      tagOriginal := TComponent(alvo).Tag;
+      try
+        TComponent(alvo).Tag := marca;
+        fmIndex.lit_modItem_textoClick(alvo);
+      finally
+        TComponent(alvo).Tag := tagOriginal;
+      end;
+    end, TIMEOUT_COMANDO) then
+  begin
+    respondeV2Ocupado(AResponseInfo, acao);
+    Exit;
+  end;
+
+  if (tipo = '') then
+  begin
+    respondeV2Erro(AResponseInfo, 404, acao, 'ITEM_NOT_FOUND',
+      'Item não encontrado na liturgia');
+    Exit;
+  end;
+
+  //Clicar numa categoria abre o seletor de cor, que é um diálogo modal e
+  //deixaria a interface travada esperando o operador
+  if ehCategoria then
+  begin
+    respondeV2Erro(AResponseInfo, 409, acao, 'ITEM_IS_CATEGORY',
+      'Item é uma categoria e não abre nada');
+    Exit;
+  end;
+
+  if not achou then
+  begin
+    respondeV2Erro(AResponseInfo, 409, acao, 'ITEM_NOT_LOADED',
+      'O item existe no arquivo mas não está carregado na tela');
+    Exit;
+  end;
+
+  respondeV2Ok(AResponseInfo, acao, 'ITEM_OPENED', '',
+    '"id":"' + escapaJson(chave) + '","type":"' + escapaJson(tipo) + '"' +
+    ',"mode":"' + modo + '"');
+end;
+
+{
+  Reconstrói os dois mapas do sorteio a partir da lista visual.
+
+  vlSorteio e vlSorteados guardam item -> índice na lbSorteio. Remover um item
+  do meio desloca todos os índices seguintes, e os mapas passam a apontar para
+  o vizinho errado. O programa nunca esbarrou nisso porque só apaga tudo, de
+  trás para frente; a API precisa remover um item só.
+
+  Chamar isto depois de qualquer remoção mantém os mapas coerentes, e de
+  quebra corrige desalinhamento que já existisse.
+
+  Deve rodar na thread da interface.
+}
+procedure TfTransmitir.refazMapaSorteio;
+var
+  i: Integer;
+  item: string;
+begin
+  fmIndex.vlSorteio.Strings.Clear;
+  fmIndex.vlSorteados.Strings.Clear;
+
+  for i := 0 to fmIndex.lbSorteio.Items.Count - 1 do
+  begin
+    item := fmIndex.lbSorteio.Items[i].Caption;
+    //Marcado quer dizer já sorteado
+    if fmIndex.lbSorteio.Items[i].Checked then
+      fmIndex.vlSorteados.Strings.Values[item] := IntToStr(i)
+    else
+      fmIndex.vlSorteio.Strings.Values[item] := IntToStr(i);
+  end;
+
+  fmIndex.SorteioContador;
+
+  if (fMonitorSorteio <> nil) then
+  begin
+    fMonitorSorteio.lbSorteio.Items := fmIndex.lbSorteio.Items;
+    fMonitorSorteio.lbSorteio.ItemIndex := fmIndex.lbSorteio.ItemIndex;
+  end;
+end;
+
+{
+  Acrescenta itens ao sorteio.
+
+  Aceita uma faixa numérica em from/to, ou um item avulso em item - que pode
+  ser número ou nome. Sem from a faixa começa em 1.
+
+  Reaproveita os handlers do programa em vez de repetir a regra: eles já
+  tratam item repetido, item que já foi sorteado voltando para o bolo, e a
+  formatação do número em quatro dígitos.
+}
+procedure TfTransmitir.v2DrawAdd(ARequestInfo: TIdHTTPRequestInfo;
+  AResponseInfo: TIdHTTPResponseInfo; const acao: string);
+var
+  txtDe, txtAte, item: string;
+  de, ate, antes, depois: Integer;
+begin
+  item := Trim(v2Param(ARequestInfo, 'item'));
+  txtDe := Trim(v2Param(ARequestInfo, 'from'));
+  txtAte := Trim(v2Param(ARequestInfo, 'to'));
+
+  if (item = '') and (txtDe = '') and (txtAte = '') then
+  begin
+    respondeV2Erro(AResponseInfo, 400, acao, 'MISSING_ITEM',
+      'Informe item, ou uma faixa em from e to');
+    Exit;
+  end;
+
+  de := 0;
+  ate := 0;
+
+  if (item = '') then
+  begin
+    //Sem from a faixa começa em 1
+    if (txtDe = '') then
+      de := 1
+    else
+      de := StrToIntDef(txtDe, -1);
+
+    if (txtAte = '') then
+      ate := de
+    else
+      ate := StrToIntDef(txtAte, -1);
+
+    if (de < 0) or (ate < 0) then
+    begin
+      respondeV2Erro(AResponseInfo, 400, acao, 'INVALID_RANGE',
+        'from e to devem ser números inteiros');
+      Exit;
+    end;
+
+    if (de > ate) then
+    begin
+      antes := de;
+      de := ate;
+      ate := antes;
+    end;
+
+    //Faixa muito larga trava a interface montando milhares de itens
+    if (ate - de) > 999 then
+    begin
+      respondeV2Erro(AResponseInfo, 400, acao, 'RANGE_TOO_LARGE',
+        'A faixa entre from e to não pode passar de 1000 itens');
+      Exit;
+    end;
+  end;
+
+  antes := 0;
+  depois := 0;
+
+  if not executaNaInterface(
+    procedure
+    begin
+      antes := fmIndex.lbSorteio.Items.Count;
+
+      if (item <> '') then
+      begin
+        fmIndex.opSort_Nm.Text := item;
+        fmIndex.btAddSorteioNMClick(nil);
+      end
+      else
+      begin
+        fmIndex.opSort_Ini.Text := IntToStr(de);
+        fmIndex.opSort_Fin.Text := IntToStr(ate);
+        fmIndex.btAddSorteioClick(nil);
+      end;
+
+      depois := fmIndex.lbSorteio.Items.Count;
+    end, TIMEOUT_COMANDO) then
+  begin
+    respondeV2Ocupado(AResponseInfo, acao);
+    Exit;
+  end;
+
+  respondeV2Ok(AResponseInfo, acao, 'ITEMS_ADDED', '',
+    '"added":' + IntToStr(depois - antes) +
+    ',"count":' + IntToStr(depois));
+end;
+
+{
+  Remove um item do sorteio.
+
+  Não existe equivalente no programa: pela tela só dá para apagar tudo. Por
+  isso a remoção é feita aqui, e os mapas são refeitos logo depois.
+}
+procedure TfTransmitir.v2DrawRemove(ARequestInfo: TIdHTTPRequestInfo;
+  AResponseInfo: TIdHTTPResponseInfo; const acao: string);
+var
+  item: string;
+  achou: Boolean;
+  restantes: Integer;
+begin
+  item := Trim(v2Param(ARequestInfo, 'item'));
+  if (item = '') then
+  begin
+    respondeV2Erro(AResponseInfo, 400, acao, 'MISSING_ITEM',
+      'Informe em item o número ou nome a remover, como aparece em participants');
+    Exit;
+  end;
+
+  achou := False;
+  restantes := 0;
+
+  if not executaNaInterface(
+    procedure
+    var
+      i: Integer;
+    begin
+      for i := fmIndex.lbSorteio.Items.Count - 1 downto 0 do
+        if SameText(Trim(fmIndex.lbSorteio.Items[i].Caption), item) then
+        begin
+          fmIndex.lbSorteio.Items.Delete(i);
+          achou := True;
+        end;
+
+      if achou then
+        refazMapaSorteio;
+
+      restantes := fmIndex.lbSorteio.Items.Count;
+    end, TIMEOUT_COMANDO) then
+  begin
+    respondeV2Ocupado(AResponseInfo, acao);
+    Exit;
+  end;
+
+  if not achou then
+  begin
+    respondeV2Erro(AResponseInfo, 404, acao, 'ITEM_NOT_FOUND',
+      'Item não está no sorteio');
+    Exit;
+  end;
+
+  respondeV2Ok(AResponseInfo, acao, 'ITEM_REMOVED', '',
+    '"item":"' + escapaJson(item) + '","count":' + IntToStr(restantes));
+end;
+
+{
+  clear apaga todos os itens; restart devolve os sorteados para o bolo sem
+  apagar a lista.
+
+  Os botões correspondentes abrem caixa de confirmação, que pela API travaria
+  a interface esperando o operador - então o efeito é reproduzido aqui.
+}
+procedure TfTransmitir.v2DrawLimpa(AResponseInfo: TIdHTTPResponseInfo;
+  const acao, acaoPedida: string);
+var
+  restantes: Integer;
+begin
+  restantes := 0;
+
+  if not executaNaInterface(
+    procedure
+    var
+      i: Integer;
+    begin
+      if (acaoPedida = 'clear') then
+        fmIndex.lbSorteio.Items.Clear
+      else
+        //restart: nada é apagado, só deixa de estar sorteado
+        for i := 0 to fmIndex.lbSorteio.Items.Count - 1 do
+          fmIndex.lbSorteio.Items[i].Checked := False;
+
+      fmIndex.lbSorteado.Items.Clear;
+      fmIndex.lmdSorteio.Caption := '----';
+
+      refazMapaSorteio;
+
+      if (fMonitorSorteio <> nil) then
+      begin
+        fMonitorSorteio.lbSorteado.Items.Clear;
+        fMonitorSorteio.lmdSorteio.Caption := fmIndex.lmdSorteio.Caption;
+      end;
+
+      restantes := fmIndex.lbSorteio.Items.Count;
+    end, TIMEOUT_COMANDO) then
+  begin
+    respondeV2Ocupado(AResponseInfo, acao);
+    Exit;
+  end;
+
+  if (acaoPedida = 'clear') then
+    respondeV2Ok(AResponseInfo, acao, 'DRAWING_CLEARED', '', '"count":0')
+  else
+    respondeV2Ok(AResponseInfo, acao, 'DRAWING_RESTARTED', '',
+      '"count":' + IntToStr(restantes));
+end;
+
+{
+  Dispara um sorteio.
+
+  Os dois impedimentos são checados antes de clicar no botão porque o
+  btSortearClick, sem itens para sortear, abre uma caixa de mensagem modal.
+  Ela travaria a interface esperando o operador, e a requisição só sairia
+  daqui por prazo esgotado.
+}
+procedure TfTransmitir.v2Draw(AResponseInfo: TIdHTTPResponseInfo;
+  const acao: string);
+var
+  jaSorteando, semParticipantes, habilitado: Boolean;
+begin
+  jaSorteando := False;
+  semParticipantes := False;
+  habilitado := True;
+
+  if not executaNaInterface(
+    procedure
+    begin
+      //tmrSortear liga durante a animação e se desliga ao final
+      jaSorteando := DM.tmrSortear.Enabled;
+      if jaSorteando then
+        Exit;
+
+      //A faixa inicial/final também alimenta a lista, então lista vazia só
+      //impede de fato quando os dois campos de faixa estão vazios
+      semParticipantes := (fmIndex.lbSorteio.Items.Count = 0) and
+                          (Trim(fmIndex.opSort_Ini.Text) = '') and
+                          (Trim(fmIndex.opSort_Fin.Text) = '');
+      if semParticipantes then
+        Exit;
+
+      habilitado := fmIndex.btSortear.Enabled;
+      if not habilitado then
+        Exit;
+
+      fmIndex.btSortearClick(fmIndex.btSortear);
+    end, TIMEOUT_COMANDO) then
+  begin
+    respondeV2Ocupado(AResponseInfo, acao);
+    Exit;
+  end;
+
+  if jaSorteando then
+  begin
+    respondeV2Erro(AResponseInfo, 409, acao, 'DRAWING_IN_PROGRESS',
+      'Já há um sorteio em andamento');
+    Exit;
+  end;
+
+  if semParticipantes then
+  begin
+    respondeV2Erro(AResponseInfo, 409, acao, 'EMPTY_PARTICIPANTS',
+      'Nenhum participante adicionado ao sorteio');
+    Exit;
+  end;
+
+  if not habilitado then
+  begin
+    respondeV2Erro(AResponseInfo, 409, acao, 'CONTROL_DISABLED',
+      'O botão de sortear está desabilitado no programa');
+    Exit;
+  end;
+
+  //O número só existe quando a animação termina. Quem quiser o resultado
+  //consulta action=status até "drawing" ficar false - era para isso que a
+  //v1 tinha um Sleep de até 3 segundos aqui dentro.
+  respondeV2Ok(AResponseInfo, acao, 'DRAWING_STARTED',
+    'Sorteio iniciado. Consulte action=status até drawing ficar false.',
+    '"drawing":true');
+end;
+
+{
+  Simula o pressionamento de uma tecla.
+
+  A janela precisa estar em primeiro plano para receber a tecla, por isso o
+  SetForegroundWindow antes - mesmo comportamento da v1.
+}
+procedure TfTransmitir.v2Keyboard(ARequestInfo: TIdHTTPRequestInfo;
+  AResponseInfo: TIdHTTPResponseInfo; const acao: string);
+var
+  tecla: Integer;
+begin
+  if not v2ExigeMetodo(ARequestInfo, AResponseInfo, acao, 'POST') then
+    Exit;
+
+  tecla := StrToIntDef(Trim(v2Param(ARequestInfo, 'key')), -1);
+
+  //Códigos virtuais válidos vão de 1 a 254
+  if (tecla < 1) or (tecla > 254) then
+  begin
+    respondeV2Erro(AResponseInfo, 400, acao, 'INVALID_KEY',
+      'Informe em key um código de tecla entre 1 e 254');
+    Exit;
+  end;
+
+  if not executaNaInterface(
+    procedure
+    begin
+      if (fMusica <> nil) and fMusica.Visible and fMusica.HandleAllocated then
+        SetForegroundWindow(fMusica.Handle)
+      else if (fmIndex <> nil) and fmIndex.HandleAllocated then
+        SetForegroundWindow(fmIndex.Handle);
+
+      keybd_event(tecla, 0, 0, 0);
+      keybd_event(tecla, 0, KEYEVENTF_KEYUP, 0);
+    end, TIMEOUT_COMANDO) then
+  begin
+    respondeV2Ocupado(AResponseInfo, acao);
+    Exit;
+  end;
+
+  respondeV2Ok(AResponseInfo, acao, 'KEY_SENT', '',
+    '"key":' + IntToStr(tecla));
+end;
+
+{
+  Abre uma música pelo ID.
+
+  O parâmetro "modo" substitui o "tag" numérico da v1, que era 1, 2 ou 3 sem
+  nada no código nem na resposta explicando o que cada número fazia.
+}
+procedure TfTransmitir.v2OpenSong(ARequestInfo: TIdHTTPRequestInfo;
+  AResponseInfo: TIdHTTPResponseInfo; const acao: string);
+var
+  idMusica: Integer;
+  modo, txtModo: string;
+  tocarAudio: Boolean;
+begin
+  if not v2ExigeMetodo(ARequestInfo, AResponseInfo, acao, 'POST') then
+    Exit;
+
+  idMusica := StrToIntDef(Trim(v2Param(ARequestInfo, 'id')), 0);
+  if (idMusica <= 0) then
+  begin
+    respondeV2Erro(AResponseInfo, 400, acao, 'INVALID_ID',
+      'Informe em id o código da música, obtido em /api/v2/search-songs');
+    Exit;
+  end;
+
+  modo := LowerCase(Trim(v2Param(ARequestInfo, 'modo')));
+  if (modo = '') then
+    modo := 'normal';
+
+  txtModo := '';
+  tocarAudio := True;
+
+  if (modo = 'pb') then
+    txtModo := 'PB'
+  else if (modo = 'sem-audio') then
+    tocarAudio := False
+  else if (modo <> 'normal') then
+  begin
+    respondeV2Erro(AResponseInfo, 400, acao, 'INVALID_MODE',
+      'Parâmetro modo deve ser normal, pb ou sem-audio');
+    Exit;
+  end;
+
+  if not executaNaInterface(
+    procedure
+    begin
+      if Assigned(fmIndex) then
+        fmIndex.abreLetraMusica('BD', txtModo, idMusica, tocarAudio);
+    end, TIMEOUT_COMANDO) then
+  begin
+    respondeV2Ocupado(AResponseInfo, acao);
+    Exit;
+  end;
+
+  respondeV2Ok(AResponseInfo, acao, 'SONG_OPENED', '',
+    '"id":' + IntToStr(idMusica) + ',"modo":"' + modo + '"');
+end;
+
+{
+  Busca de músicas.
+
+  A v1 usava o qrBUSCA do formulário, um único TFDQuery compartilhado por
+  todas as requisições: duas buscas ao mesmo tempo e uma fecha a consulta
+  enquanto a outra percorre os registros. Aqui a consulta é criada por
+  requisição e roda dentro da thread da interface, sobre a mesma conexão que
+  o resto do programa usa - sem conexão nova e sem concorrência.
+}
+procedure TfTransmitir.v2SearchSongs(ARequestInfo: TIdHTTPRequestInfo;
+  AResponseInfo: TIdHTTPResponseInfo; const acao: string);
+var
+  termo, musicas: string;
+  total: Integer;
+begin
+  if not v2ExigeMetodo(ARequestInfo, AResponseInfo, acao, 'GET') then
+    Exit;
+
+  termo := Trim(v2Param(ARequestInfo, 'q'));
+  if (termo = '') then
+  begin
+    respondeV2Erro(AResponseInfo, 400, acao, 'MISSING_SEARCH_TERM',
+      'Informe o termo de busca no parâmetro q');
+    Exit;
+  end;
+
+  musicas := '';
+  total := 0;
+
+  if not executaNaInterface(
+    procedure
+    var
+      consulta: TFDQuery;
+    begin
+      consulta := TFDQuery.Create(nil);
+      try
+        consulta.Connection := DM.ADO;
+        consulta.SQL.Text := qrBUSCA.SQL.Text;
+        consulta.ParamByName('VALOR').AsString := fmIndex.termo_busca(termo);
+        consulta.Open;
+
+        while not consulta.Eof do
+        begin
+          if (musicas <> '') then
+            musicas := musicas + ',';
+
+          musicas := musicas +
+            '{"id":' + consulta.FieldByName('ID').AsString +
+            ',"nome":"' + escapaJson(consulta.FieldByName('NOME').AsString) + '"' +
+            ',"album":"' + escapaJson(consulta.FieldByName('NOME_ALBUM_COM').AsString) + '"}';
+
+          Inc(total);
+          consulta.Next;
+        end;
+      finally
+        consulta.Free;
+      end;
+    end, TIMEOUT_INTERFACE) then
+  begin
+    respondeV2Ocupado(AResponseInfo, acao);
+    Exit;
+  end;
+
+  //O campo continua se chamando "musicas", como na v1, para que migrar o
+  //controle remoto para a v2 não exija reescrever quem lê a lista
+  respondeV2Ok(AResponseInfo, acao,
+    IfThen(total > 0, 'SONGS_FOUND', 'NO_SONGS_FOUND'), '',
+    '"count":' + IntToStr(total) + ',"musicas":[' + musicas + ']');
+end;
+
+{
+  O Indy só entrega GET, POST e HEAD ao OnCommandGet. Os demais verbos caem
+  aqui - entre eles o OPTIONS, que o navegador manda antes de uma requisição
+  com cabeçalho Authorization ou com método POST.
+
+  Sem isto o preflight nunca chegava ao roteador da v2 e o navegador
+  desistia da requisição seguinte.
+}
+procedure TfTransmitir.IdHTTPServer1CommandOther(AContext: TIdContext;
+  ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
+begin
+  //Fora da v2, nada muda: o verbo segue sem tratamento, como antes
+  trataApiV2(AContext, ARequestInfo, AResponseInfo);
+end;
+
+{
+  O Indy interpreta o cabeçalho Authorization por conta própria e, diante de
+  um esquema que não conhece, levanta EIdHTTPUnsupportedAuthorisationScheme e
+  derruba a conexão - o cliente nem chega a receber resposta.
+
+  Como o esquema Bearer não é um dos que ele trata, é preciso declarar aqui
+  que a autenticação já está resolvida. Quem lê e confere o token é a v2, em
+  v2TokenValido, direto do cabeçalho bruto.
+}
+procedure TfTransmitir.IdHTTPServer1ParseAuthentication(AContext: TIdContext;
+  const AAuthType, AAuthData: String; var VUsername, VPassword: String;
+  var VHandled: Boolean);
+begin
+  if SameText(Trim(AAuthType), 'Bearer') then
+    VHandled := True;
+end;
+
+{
+  Roteamento da v2.
+
+  Devolve True quando a requisição era da v2 e já foi respondida - nesse caso
+  o handler principal encerra e a v1 nem chega a ser consultada.
+}
+function TfTransmitir.trataApiV2(AContext: TIdContext;
+  ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo): Boolean;
+var
+  rota, acao, metodo: string;
+begin
+  Result := False;
+
+  rota := Trim(ARequestInfo.Document);
+  //Barra final não muda a rota: /api/v2/ping/ e /api/v2/ping são a mesma
+  while (Length(rota) > 1) and rota.EndsWith('/') do
+    Delete(rota, Length(rota), 1);
+
+  //Comparação por segmento: /api/v2x não pertence à v2. A v1 usava
+  //Pos('/api', arq) = 1, que aceita /apiary como rota de API.
+  if not (SameText(rota, ROTA_V2) or StartsText(ROTA_V2 + '/', rota)) then
+    Exit;
+
+  Result := True;
+
+  //Nome curto da rota, usado no campo "action" da resposta
+  acao := Copy(rota, Length(ROTA_V2) + 2, MaxInt);
+
+  AResponseInfo.ContentType := 'application/json';
+  AResponseInfo.CharSet := 'utf-8';
+  AResponseInfo.CustomHeaders.Values['Access-Control-Allow-Origin'] := '*';
+  AResponseInfo.CustomHeaders.Values['Access-Control-Allow-Methods'] := 'GET, POST, OPTIONS';
+  AResponseInfo.CustomHeaders.Values['Access-Control-Allow-Headers'] := 'Authorization, Content-Type';
+  AResponseInfo.CustomHeaders.Values['Access-Control-Max-Age'] := '600';
+
+  metodo := UpperCase(Trim(ARequestInfo.Command));
+
+  //Preflight: o navegador só quer saber o que é permitido. Nada é executado,
+  //e responder antes da autenticação é proposital - o preflight não carrega
+  //token nem cookie.
+  if (metodo = 'OPTIONS') then
+  begin
+    AResponseInfo.ResponseNo := 204;
+    AResponseInfo.ContentText := '';
+    Exit;
+  end;
+
+  if (not v2PaginaInterna(AContext, ARequestInfo)) and
+     (not v2TokenValido(ARequestInfo)) then
+  begin
+    respondeV2Erro(AResponseInfo, 401, acao, 'INVALID_TOKEN',
+      'Token ausente ou inválido');
+    Exit;
+  end;
+
+  // ---------------------------------------------------------------
+  // Rotas
+  // ---------------------------------------------------------------
+
+  //Falha inesperada vira 500 em JSON, com a mensagem. Sem isto o Indy
+  //devolve 500 com corpo vazio e não há como saber o que aconteceu.
+  try
+    v2Despacha(ARequestInfo, AResponseInfo, rota, acao);
+  except
+    on E: Exception do
+      respondeV2Erro(AResponseInfo, 500, acao, 'INTERNAL_ERROR',
+        E.ClassName + ': ' + E.Message);
+  end;
+end;
+
+procedure TfTransmitir.v2Despacha(ARequestInfo: TIdHTTPRequestInfo;
+  AResponseInfo: TIdHTTPResponseInfo; const rota, acao: string);
+begin
+  if SameText(rota, ROTA_V2 + '/docs') then
+  begin
+    v2Docs(ARequestInfo, AResponseInfo, acao);
+    Exit;
+  end;
+
+  if SameText(rota, ROTA_V2 + '/ping') then
+  begin
+    if not v2ExigeMetodo(ARequestInfo, AResponseInfo, acao, 'GET') then
+      Exit;
+    respondeV2Ok(AResponseInfo, acao, 'PONG', '',
+      '"app":"LouvorJA","version":"' + escapaJson(fmIndex.VersaoExe) + '"');
+    Exit;
+  end;
+
+  if SameText(rota, ROTA_V2 + '/clock') then
+  begin
+    if not v2ExigeMetodo(ARequestInfo, AResponseInfo, acao, 'GET') then
+      Exit;
+    v2Clock(AResponseInfo, acao);
+    Exit;
+  end;
+
+  if SameText(rota, ROTA_V2 + '/song-slides') then
+  begin
+    v2SongSlides(ARequestInfo, AResponseInfo, acao);
+    Exit;
+  end;
+
+  if SameText(rota, ROTA_V2 + '/stopwatch') then
+  begin
+    v2Stopwatch(ARequestInfo, AResponseInfo, acao);
+    Exit;
+  end;
+
+  if SameText(rota, ROTA_V2 + '/drawing-number') then
+  begin
+    v2DrawingNumber(ARequestInfo, AResponseInfo, acao);
+    Exit;
+  end;
+
+  if SameText(rota, ROTA_V2 + '/search-songs') then
+  begin
+    v2SearchSongs(ARequestInfo, AResponseInfo, acao);
+    Exit;
+  end;
+
+
+
+  if SameText(rota, ROTA_V2 + '/media') then
+  begin
+    v2Media(ARequestInfo, AResponseInfo, acao);
+    Exit;
+  end;
+  if SameText(rota, ROTA_V2 + '/online-videos') then
+  begin
+    v2OnlineVideos(ARequestInfo, AResponseInfo, acao);
+    Exit;
+  end;
+  if SameText(rota, ROTA_V2 + '/bible') then
+  begin
+    v2Bible(ARequestInfo, AResponseInfo, acao);
+    Exit;
+  end;
+
+  if SameText(rota, ROTA_V2 + '/liturgy') then
+  begin
+    v2Liturgy(ARequestInfo, AResponseInfo, acao);
+    Exit;
+  end;
+
+  if SameText(rota, ROTA_V2 + '/keyboard') then
+  begin
+    v2Keyboard(ARequestInfo, AResponseInfo, acao);
+    Exit;
+  end;
+
+  if SameText(rota, ROTA_V2 + '/open-song') then
+  begin
+    v2OpenSong(ARequestInfo, AResponseInfo, acao);
+    Exit;
+  end;
+
+  //Rota desconhecida sob /api/v2 responde JSON. Na v1 ela escapa para o
+  //servidor de arquivos e devolve o 404.html com status 200.
+  respondeV2Erro(AResponseInfo, 404, acao, 'UNKNOWN_ROUTE',
+    'Rota não encontrada');
 end;
 
 end.

@@ -1708,6 +1708,7 @@ type
     procedure formataTexto(RichEdit: TbsSkinRichEdit);
     procedure FormResize(Sender: TObject);
     procedure tsBibliaShow(Sender: TObject);
+    procedure inicializaBiblia;
     function ExtraiTexto(const Str, Str1, Str2: string): string;
     procedure carregaParams();
     function GetComputerNameFunc: string;
@@ -10520,7 +10521,11 @@ end;
 procedure TfmIndex.rbDirecaoClick(Sender: TObject);
 begin
   txtDecr.Enabled := (rbDirecao.ItemIndex = 1);
-  if txtDecr.Enabled then
+
+  //CanFocus cobre página ainda não exibida: focar controle invisível levanta
+  //exceção, e este handler é chamado por carregaConfiguracoes antes de a
+  //aba do cronômetro aparecer alguma vez
+  if txtDecr.Enabled and txtDecr.CanFocus then
     txtDecr.Setfocus;
 
   //Só zera quando a direção foi trocada pelo usuário, não durante a carga das
@@ -11434,7 +11439,7 @@ begin
     begin
       if (Sender <> nil) then
         application.MessageBox('Coloque o número para ser adicionado!', TITULO, mb_ok + mb_iconexclamation);
-      opSort_Ini.SetFocus;
+      if opSort_Ini.CanFocus then opSort_Ini.SetFocus;
       Exit;
     end;
     opSort_Ini.text := opSort_Fin.text;
@@ -11487,7 +11492,7 @@ begin
   opSort_Ini.text := '';
   opSort_Fin.text := '';
   SorteioContador();
-  opSort_Ini.SetFocus;
+  if opSort_Ini.CanFocus then opSort_Ini.SetFocus;
 end;
 
 procedure TfmIndex.btAddSorteioNMClick(Sender: TObject);
@@ -11503,7 +11508,7 @@ begin
   begin
     if (Sender <> nil) then
       application.MessageBox('Digite o nome para ser adicionado!', TITULO, mb_ok + mb_iconexclamation);
-    opSort_Nm.SetFocus;
+    if opSort_Nm.CanFocus then opSort_Nm.SetFocus;
     Exit;
   end;
 
@@ -11535,7 +11540,7 @@ begin
 
   opSort_NM.text := '';
   SorteioContador();
-  opSort_NM.SetFocus;
+  if opSort_NM.CanFocus then opSort_NM.SetFocus;
 end;
 
 procedure TfmIndex.btfsBoldClick(Sender: TObject);
@@ -12431,7 +12436,7 @@ begin
     if fMonitorSorteio <> nil then
       fMonitorSorteio.lmdSorteio.Caption := lmdSorteio.Caption;
     application.messagebox('Não há itens disponíveis para serem sorteados!', TITULO, mb_ok + mb_iconexclamation);
-    opSort_Ini.SetFocus;
+    if opSort_Ini.CanFocus then opSort_Ini.SetFocus;
     exit;
   end;
 
@@ -12812,10 +12817,8 @@ begin
   result := S;
 end;
 
-procedure TfmIndex.tsBibliaShow(Sender: TObject);
+procedure TfmIndex.inicializaBiblia;
 begin
-  PaginaMenuAtiva(bsConfBiblia,tsBiblia);
-  marcaAbaAberta(tsBiblia);
   if (loadCol.Strings.Values['BIBLIA_F'] <> 'okf') then
   begin
     lmdBibliaTxt.Caption := '';
@@ -12906,6 +12909,13 @@ begin
     carregaConfiguracoes('BIBLIA');
   end;
 
+end;
+
+procedure TfmIndex.tsBibliaShow(Sender: TObject);
+begin
+  PaginaMenuAtiva(bsConfBiblia,tsBiblia);
+  marcaAbaAberta(tsBiblia);
+  inicializaBiblia;
 end;
 
 procedure TfmIndex.miOpcExportar1Click(Sender: TObject);

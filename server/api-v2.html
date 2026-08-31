@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>API v2 - Louvor JA</title>
+<style>
+  :root {
+    --bg:#f4f5f7; --card:#fff; --linha:#dcdfe4; --txt:#1c1e21; --fraco:#6b7280;
+    --azul:#1a5fb4; --ok:#1a7f37; --erro:#b42318; --aviso:#9a6700;
+    --leve:#eef1f5; --cod:#f6f8fa;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:#16181d; --card:#1f2229; --linha:#33373f; --txt:#e6e8eb; --fraco:#9aa1ac;
+      --azul:#6ea8fe; --ok:#4ac26b; --erro:#ff6b5e; --aviso:#e3b341;
+      --leve:#262a32; --cod:#15171c;
+    }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt);
+         font:15px/1.6 -apple-system,"Segoe UI",Roboto,sans-serif; }
+  .pagina { max-width:940px; margin:0 auto; padding:24px 20px 60px; }
+
+  h1 { font-size:26px; margin:0 0 6px; }
+  h2 { font-size:19px; margin:34px 0 10px; padding-bottom:6px; border-bottom:1px solid var(--linha); }
+  h3 { font-size:15px; margin:22px 0 6px; font-family:ui-monospace,Consolas,monospace; color:var(--azul); }
+  p { margin:8px 0; }
+  .sub { color:var(--fraco); margin:0 0 4px; }
+
+  code { font:13px/1.5 ui-monospace,Consolas,monospace; background:var(--leve);
+         padding:1px 5px; border-radius:4px; }
+  pre { background:var(--cod); border:1px solid var(--linha); border-radius:8px;
+        padding:12px 14px; overflow:auto;
+        font:12.5px/1.6 ui-monospace,Consolas,monospace; }
+  pre code { background:none; padding:0; }
+
+  table { border-collapse:collapse; width:100%; margin:10px 0; font-size:14px; }
+  th, td { text-align:left; padding:7px 10px; border-bottom:1px solid var(--linha); vertical-align:top; }
+  th { font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--fraco); font-weight:600; }
+  td code { white-space:nowrap; }
+
+  .verbo { font:600 11px/1 ui-monospace,Consolas,monospace; padding:3px 6px;
+           border-radius:4px; border:1px solid; margin-right:6px; }
+  .get { color:var(--ok); border-color:var(--ok); }
+  .post { color:var(--aviso); border-color:var(--aviso); }
+
+  .indice { background:var(--card); border:1px solid var(--linha); border-radius:10px;
+            padding:14px 18px; margin:20px 0; }
+  .indice ul { margin:6px 0 0; padding-left:20px; columns:2; }
+  @media (max-width:640px) { .indice ul { columns:1; } }
+  .indice a { color:var(--azul); text-decoration:none; }
+  .indice a:hover { text-decoration:underline; }
+
+  .nota { background:var(--card); border:1px solid var(--linha);
+          border-left:3px solid var(--aviso); border-radius:8px;
+          padding:11px 14px; margin:14px 0; font-size:14px; color:var(--fraco); }
+  .nota strong { color:var(--txt); }
+</style>
+</head>
+<body>
+<div class="pagina">
+
+<h1>API v2 &mdash; Louvor JA</h1>
+<p class="sub">Controle do programa por HTTP. A v1 continua funcionando em <code>/api/…</code> e não é descrita aqui.</p>
+
+<div class="indice">
+  <strong>Nesta página</strong>
+  <ul>
+    <li><a href="#convencao">Convenção</a></li>
+    <li><a href="#auth">Autenticação</a></li>
+    <li><a href="#ping">ping</a></li>
+    <li><a href="#clock">clock</a></li>
+    <li><a href="#song-slides">song-slides</a></li>
+    <li><a href="#open-song">open-song</a></li>
+    <li><a href="#search-songs">search-songs</a></li>
+    <li><a href="#stopwatch">stopwatch</a></li>
+    <li><a href="#drawing-number">drawing-number</a></li>
+    <li><a href="#bible">bible</a></li>
+    <li><a href="#liturgy">liturgy</a></li>
+    <li><a href="#online-videos">online-videos</a></li>
+    <li><a href="#media">media</a></li>
+    <li><a href="#keyboard">keyboard</a></li>
+  </ul>
+</div>
+
+<h2 id="convencao">Convenção</h2>
+
+<p>A rota é <code>/api/v2/&lt;recurso&gt;</code>, em kebab-case. O recurso é substantivo; o verbo vai no parâmetro <code>action</code>. Barra final não muda a rota.</p>
+
+<p><strong>GET lê, POST altera.</strong> Método errado devolve <code>405</code>. Comando não alterna: repetir <code>start</code> mantém iniciado, não pausa.</p>
+
+<p>Parâmetros têm nome em minúsculas. O <code>action</code> é comparado sem diferenciar maiúsculas e com espaços aparados. Parâmetro obrigatório ausente devolve <code>400</code> com <code>code</code> <code>MISSING_*</code>; presente mas inválido, <code>INVALID_*</code>. Parâmetro desconhecido é ignorado.</p>
+
+<p>Tudo é UTF-8, na requisição e na resposta &mdash; inclusive os acentos nos valores da URL.</p>
+
+<h3 style="color:var(--txt)">Formato da resposta</h3>
+
+<pre><code>{ "status": "ok",    "action": "…", "code": "…", "message": "…", &lt;campos de dados&gt; }
+
+{ "status": "error", "action": "…", "code": "…", "message": "…" }</code></pre>
+
+<table>
+  <tr><th>Campo</th><th>Significado</th></tr>
+  <tr><td><code>status</code></td><td>Só <code>"ok"</code> ou <code>"error"</code>.</td></tr>
+  <tr><td><code>code</code></td><td>Sempre presente, em <code>SCREAMING_SNAKE</code>. <strong>É o contrato estável</strong>: decida por ele, nunca pelo texto. Em <code>ok</code> descreve o estado; em <code>error</code>, o motivo.</td></tr>
+  <tr><td><code>message</code></td><td>Só texto para humano. Nunca carrega dado.</td></tr>
+  <tr><td>dados</td><td>Em campo próprio e nomeado (<code>musicas</code>, <code>time</code>, <code>slide</code>), no topo do objeto. Nunca dentro de <code>message</code>.</td></tr>
+</table>
+
+<h3 style="color:var(--txt)">Códigos HTTP</h3>
+
+<table>
+  <tr><td><code>200</code></td><td>ok</td><td><code>404</code></td><td>rota inexistente</td></tr>
+  <tr><td><code>400</code></td><td>erro do cliente</td><td><code>405</code></td><td>método errado</td></tr>
+  <tr><td><code>401</code></td><td>token</td><td><code>409</code></td><td>o estado do programa impede</td></tr>
+  <tr><td><code>500</code></td><td>falha interna</td><td><code>503</code></td><td>interface não respondeu no prazo</td></tr>
+</table>
+
+<div class="nota">
+  <strong>Sobre o 503.</strong> Significa &ldquo;não deu para confirmar no prazo&rdquo;, e não &ldquo;nada aconteceu&rdquo;. O comando pode ter sido executado logo depois. Costuma indicar que o programa está com uma janela modal aberta esperando o operador.
+</div>
+
+<h2 id="auth">Autenticação</h2>
+
+<p>O token é o mesmo configurado na aba Transmitir. Pode ir no cabeçalho, que é a forma preferida, ou na URL:</p>
+
+<pre><code>Authorization: Bearer &lt;token&gt;
+
+/api/v2/ping?token=&lt;token&gt;</code></pre>
+
+<p>Na URL o token acaba no histórico do navegador, em log de servidor e no cabeçalho <code>Referer</code> enviado a terceiros. Prefira o cabeçalho quando puder.</p>
+
+<p><strong>Página servida pelo próprio programa dispensa token.</strong> Isso vale quando a conexão vem da própria máquina <em>e</em> o cabeçalho <code>Origin</code> está ausente ou é igual à origem do servidor. Uma página de terceiro aberta no navegador do operador sempre manda a origem dela, e o navegador não deixa a página mentir nisso &mdash; por isso ela precisa de token como qualquer cliente externo.</p>
+
+<p>Requisições de outras máquinas sempre exigem token, mesmo com <code>Origin</code> forjado: um script pode escrever esse cabeçalho, então ele só vale como prova em conexão local.</p>
+
+<p>O preflight <code>OPTIONS</code> é respondido com <code>204</code> antes da autenticação, porque ele não carrega token.</p>
+
+<h2 id="ping">ping</h2>
+<p><span class="verbo get">GET</span><code>/api/v2/ping</code></p>
+<p>Confirma que o programa está no ar.</p>
+<pre><code>{"status":"ok","action":"ping","code":"PONG",
+ "app":"LouvorJA","version":"26.8.9716.65265"}</code></pre>
+
+<h2 id="clock">clock</h2>
+<p><span class="verbo get">GET</span><code>/api/v2/clock</code></p>
+<p>Data e hora do computador onde o programa roda.</p>
+<pre><code>{"status":"ok","action":"clock","code":"CLOCK",
+ "date":"2026-08-08","time":"18:10:52","datetime":"2026-08-08T18:10:52"}</code></pre>
+
+<h2 id="song-slides">song-slides</h2>
+<p><code>/api/v2/song-slides</code></p>
+<table>
+  <tr><th>action</th><th>Método</th><th>Parâmetros</th><th>O que faz</th></tr>
+  <tr><td><code>status</code></td><td>GET</td><td>&mdash;</td><td>Devolve <code>playing</code>, <code>slide_count</code>, <code>has_next</code></td></tr>
+  <tr><td><code>slide</code></td><td>GET</td><td><code>slide=current|next</code></td><td>Texto do slide em <code>slide</code></td></tr>
+  <tr><td><code>next</code></td><td>POST</td><td>&mdash;</td><td>Avança um slide</td></tr>
+  <tr><td><code>previous</code></td><td>POST</td><td>&mdash;</td><td>Volta um slide</td></tr>
+  <tr><td><code>close</code></td><td>POST</td><td>&mdash;</td><td>Fecha a música</td></tr>
+</table>
+<p>Sem música em exibição, a leitura responde <code>200</code> com <code>code</code> <code>NO_SONG_PLAYING</code>, e os comandos respondem <code>409</code>.</p>
+
+<h2 id="open-song">open-song</h2>
+<p><span class="verbo post">POST</span><code>/api/v2/open-song</code></p>
+<table>
+  <tr><th>Parâmetro</th><th>Valores</th></tr>
+  <tr><td><code>id</code></td><td>Código da música, obtido em <code>search-songs</code></td></tr>
+  <tr><td><code>modo</code></td><td><code>normal</code> (padrão), <code>pb</code> (preto e branco), <code>sem-audio</code></td></tr>
+</table>
+
+<h2 id="search-songs">search-songs</h2>
+<p><span class="verbo get">GET</span><code>/api/v2/search-songs?q=termo</code></p>
+<p>Busca por nome ou número de faixa. O campo continua se chamando <code>musicas</code>, como na v1.</p>
+<pre><code>{"status":"ok","action":"search-songs","code":"SONGS_FOUND","count":2,
+ "musicas":[{"id":1746,"nome":"…","album":"…"}]}</code></pre>
+
+<h2 id="stopwatch">stopwatch</h2>
+<p><code>/api/v2/stopwatch</code></p>
+<table>
+  <tr><th>action</th><th>Método</th><th>Parâmetros</th><th>O que faz</th></tr>
+  <tr><td><code>status</code></td><td>GET</td><td>&mdash;</td><td><code>running</code>, <code>time</code>, <code>mode</code>, <code>target</code>, <code>laps</code></td></tr>
+  <tr><td><code>start</code></td><td>POST</td><td>&mdash;</td><td>Inicia; se já estiver rodando, mantém</td></tr>
+  <tr><td><code>pause</code></td><td>POST</td><td>&mdash;</td><td>Pausa; se já estiver pausado, mantém</td></tr>
+  <tr><td><code>reset</code></td><td>POST</td><td>&mdash;</td><td>Para e zera <em>(apelido: <code>stop</code>)</em></td></tr>
+  <tr><td><code>lap</code></td><td>POST</td><td>&mdash;</td><td>Anota o tempo <em>(apelido: <code>note</code>)</em></td></tr>
+  <tr><td><code>set-mode</code></td><td>POST</td><td><code>mode=countup|countdown</code>, <code>target=hh:mm:ss</code></td><td>Troca o modo; <code>target</code> é obrigatório no regressivo</td></tr>
+</table>
+<p>Trocar o modo zera o cronômetro, como acontece na tela. Se o controle correspondente estiver desabilitado no programa, a resposta é <code>409 CONTROL_DISABLED</code>.</p>
+
+<h2 id="drawing-number">drawing-number</h2>
+<p><code>/api/v2/drawing-number</code></p>
+<table>
+  <tr><th>action</th><th>Método</th><th>Parâmetros</th><th>O que faz</th></tr>
+  <tr><td><code>status</code></td><td>GET</td><td>&mdash;</td><td><code>drawing</code>, <code>last</code>, <code>count</code>, <code>drawn</code></td></tr>
+  <tr><td><code>participants</code></td><td>GET</td><td>&mdash;</td><td>Lista em <code>participants</code></td></tr>
+  <tr><td><code>draw</code></td><td>POST</td><td>&mdash;</td><td>Sorteia</td></tr>
+  <tr><td><code>add</code></td><td>POST</td><td><code>from</code>, <code>to</code> ou <code>item</code></td><td>Faixa numérica ou item avulso</td></tr>
+  <tr><td><code>remove</code></td><td>POST</td><td><code>item</code></td><td>Tira um item</td></tr>
+  <tr><td><code>clear</code></td><td>POST</td><td>&mdash;</td><td>Apaga todos os itens</td></tr>
+  <tr><td><code>restart</code></td><td>POST</td><td>&mdash;</td><td>Devolve os sorteados ao bolo</td></tr>
+</table>
+<p>No <code>add</code>, sem <code>from</code> a faixa começa em 1; sem <code>to</code>, vai só até o <code>from</code>. Faixa acima de mil itens é recusada.</p>
+
+<div class="nota">
+  <strong>O sorteio responde antes de terminar.</strong> O <code>draw</code> devolve na hora, ainda durante a animação. Consulte <code>status</code> até <code>drawing</code> virar <code>false</code> para ler o número em <code>last</code>.
+</div>
+
+<h2 id="bible">bible</h2>
+<p><code>/api/v2/bible</code></p>
+<table>
+  <tr><th>action</th><th>Método</th><th>Parâmetros</th><th>O que faz</th></tr>
+  <tr><td><code>status</code></td><td>GET</td><td>&mdash;</td><td>Versão, livro, capítulo, versículo, texto e <code>ready</code></td></tr>
+  <tr><td><code>versions</code></td><td>GET</td><td>&mdash;</td><td>Versões instaladas</td></tr>
+  <tr><td><code>books</code></td><td>GET</td><td>&mdash;</td><td>Livros, com <code>id</code>, <code>nome</code>, <code>sigla</code>, <code>capitulos</code></td></tr>
+  <tr><td><code>chapters</code></td><td>GET</td><td><code>book</code></td><td>Capítulos do livro</td></tr>
+  <tr><td><code>verses</code></td><td>GET</td><td><code>book</code>, <code>chapter</code></td><td>Versículos com o texto</td></tr>
+  <tr><td><code>show</code></td><td>POST</td><td><code>book</code>, <code>chapter</code>, <code>verse</code></td><td>Projeta o versículo</td></tr>
+  <tr><td><code>next</code> / <code>previous</code></td><td>POST</td><td>&mdash;</td><td>Anda um versículo, virando capítulo e livro</td></tr>
+</table>
+<p>Todas aceitam <code>version</code> para consultar outra versão; sem ele vale a que o programa está usando. As listagens funcionam com o programa recém-aberto. Já <code>next</code> e <code>previous</code> exigem um versículo exibido antes, senão respondem <code>409</code>.</p>
+
+<h2 id="liturgy">liturgy</h2>
+<p><code>/api/v2/liturgy</code></p>
+<table>
+  <tr><th>action</th><th>Método</th><th>Parâmetros</th><th>O que faz</th></tr>
+  <tr><td><code>list</code></td><td>GET</td><td><code>week=1..7</code></td><td>Itens do dia; sem <code>week</code>, o dia atual</td></tr>
+  <tr><td><code>open</code></td><td>POST</td><td><code>id</code>, <code>mode</code></td><td>Abre o item</td></tr>
+</table>
+<p>Cada item traz <code>id</code>, <code>type</code>, <code>title</code>, <code>subtitle</code> e <code>done</code>. Itens de música trazem ainda <code>song_id</code>, <code>choose_song</code> e <code>has_playback</code>.</p>
+<p>O <code>mode</code> vale para música: <code>normal</code>, <code>pb</code>, <code>no-audio</code>, <code>file</code>, <code>playback</code>. Item do tipo <code>categoria</code> não abre nada e responde <code>409</code>.</p>
+
+<div class="nota">
+  <strong>has_playback segue a regra da tela.</strong> Música indefinida ou não encontrada no banco contam como disponível. O campo responde &ldquo;o programa mostraria o ícone de playback&rdquo;, não &ldquo;o arquivo existe&rdquo;.
+</div>
+
+<h2 id="online-videos">online-videos</h2>
+<p><code>/api/v2/online-videos</code></p>
+<table>
+  <tr><th>action</th><th>Método</th><th>Parâmetros</th><th>O que faz</th></tr>
+  <tr><td><code>channels</code></td><td>GET</td><td>&mdash;</td><td>Canais cadastrados</td></tr>
+  <tr><td><code>playlists</code></td><td>GET</td><td><code>channel</code></td><td>Playlists do canal</td></tr>
+  <tr><td><code>videos</code></td><td>GET</td><td><code>playlist</code></td><td>Vídeos da playlist</td></tr>
+  <tr><td><code>open</code></td><td>POST</td><td><code>id</code>, <code>title</code></td><td>Abre a projeção do vídeo</td></tr>
+</table>
+<p>Vídeo fora do catálogo é aceito &mdash; o identificador do YouTube vale por si. A resposta traz <code>in_catalog</code>. Sem <code>title</code>, a API busca o nome cadastrado.</p>
+
+<h2 id="media">media</h2>
+<p><code>/api/v2/media</code></p>
+<table>
+  <tr><th>action</th><th>Método</th><th>Parâmetros</th><th>O que faz</th></tr>
+  <tr><td><code>status</code></td><td>GET</td><td>&mdash;</td><td><code>active</code>, <code>playing</code>, <code>file</code>, <code>position</code>, <code>duration</code></td></tr>
+  <tr><td><code>play</code> / <code>pause</code></td><td>POST</td><td>&mdash;</td><td>Retoma ou pausa</td></tr>
+  <tr><td><code>seek</code></td><td>POST</td><td><code>seconds</code></td><td>Salta para a posição</td></tr>
+  <tr><td><code>close</code></td><td>POST</td><td>&mdash;</td><td>Encerra a reprodução</td></tr>
+</table>
+<p>Controla o mesmo painel da tela, servindo tanto ao player de arquivos quanto ao vídeo online. <code>position</code> e <code>duration</code> vêm em segundos. Sem nada em reprodução, <code>status</code> responde <code>200</code> com <code>active:false</code> e os comandos respondem <code>409</code>.</p>
+
+<h2 id="keyboard">keyboard</h2>
+<p><span class="verbo post">POST</span><code>/api/v2/keyboard?key=13</code></p>
+<p>Simula uma tecla na janela em primeiro plano do programa. O código vai de 1 a 254.</p>
+
+<h2>docs</h2>
+<p><span class="verbo get">GET</span><code>/api/v2/docs</code></p>
+<p>Esta página. É servida a partir de <code>server/api-v2.html</code>, na pasta de configuração do programa.</p>
+
+</div>
+</body>
+</html>
