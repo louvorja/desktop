@@ -1097,8 +1097,6 @@ begin
 end;
 
 procedure TfMusica.FormClose(Sender: TObject; var Action: TCloseAction);
-var
-  i: integer;
 begin
   //A fila só vale para esta exibição: some junto com a janela
   FreeAndNil(filaArquivos);
@@ -1110,18 +1108,7 @@ begin
      fmIndex.gravaParamServer('MUSICA', 'letra_prox', '');
   end;
 
-  if (fMusica.AlphaBlendValue > 0) then
-  begin
-    if fmIndex.ckFadeForm.Checked then
-    begin
-      for i := fMusica.AlphaBlendValue downto 0 do
-      begin
-        fMusica.AlphaBlendValue := i;
-        sleep(1);
-      end;
-    end
-    else fMusica.AlphaBlendValue := 0;
-  end;
+  fmIndex.fadeJanela(fMusica, 0);
 
   if (audio) then
   begin

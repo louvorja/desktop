@@ -1691,6 +1691,9 @@ type
     function lerParam(Grupo, Param, Valor: string;Arquivo: string = ''; Diretorio:string = ''): string;
     procedure gravaParam(Grupo, Param, Valor: string;Arquivo: string = '');
     procedure gravaParamLote(const Arquivo: string; const Itens: array of TParamItem);
+    //Faz a janela aparecer ou sumir em tempo fixo, respeitando o ckFadeForm
+    procedure fadeJanela(Janela: TForm; alvo: Integer);
+
     procedure gravaParamServer(Grupo, Param, Valor: string);
     procedure apagaParam(Grupo: string; Param: string = '';Arquivo: string = '');
     procedure cbMusicaChange(Sender: TObject);
@@ -2302,6 +2305,10 @@ type
 
 var
   fmIndex: TfmIndex;
+
+  //Duração do fade das janelas, em milissegundos. É tempo de relógio: a
+  //animação termina neste prazo em qualquer computador
+  fade_ms: Integer = 250;
 
 implementation
 
@@ -3273,7 +3280,6 @@ end;
 procedure TfmIndex.abreLetraMusica(tipo: string;param: string;musicaID: Integer;audio:boolean);
 var
   monitor,monitor_ret,monitor_ope: integer;
-  i: Integer;
 begin
   monitor := strtoint(lerParam('Musicas', 'Monitor', '2'));
   monitor_ret := strtoint(lerParam('Musicas', 'MonitorRetorno', '3'));
@@ -3383,21 +3389,12 @@ begin
   end;
 
 
-  if ckFadeForm.Checked then
-  begin
-    for i := 0 to 255 do
-    begin
-      fMusica.AlphaBlendValue := i;
-      sleep(1);
-    end;
-  end
-  else fMusica.AlphaBlendValue := 255;
+  fadeJanela(fMusica, 255);
 end;
 
 procedure TfmIndex.abreLetraMusicaAlbum(albumID: Integer;musicaID: Integer);
 var
   monitor, monitor_ret: integer;
-  i: integer;
 begin
   monitor := strtoint(lerParam('Musicas', 'Monitor', '2'));
   if (Screen.MonitorCount < monitor) then
@@ -3499,15 +3496,7 @@ begin
   end;
 
 
-  if ckFadeForm.Checked then
-  begin
-    for i := 0 to 255 do
-    begin
-      fMusica.AlphaBlendValue := i;
-      sleep(1);
-    end;
-  end
-  else fMusica.AlphaBlendValue := 255;
+  fadeJanela(fMusica, 255);
 end;
 
 procedure TfmIndex.abrePagina(TabSheet: TbsSkinTabSheet);
@@ -3542,7 +3531,6 @@ procedure TfmIndex.abreVideoOn(videoID, videoTITULO: string);
 var
   monitor: integer;
   Flags: Cardinal;
-  i: integer;
 begin
   if not InternetGetConnectedState(@Flags, 0) then
   begin
@@ -3588,15 +3576,7 @@ begin
   fVideoOn.Height := monitorInfo(monitor).Height;
 
 
-  if ckFadeForm.Checked then
-  begin
-    for i := 0 to 255 do
-    begin
-      fVideoOn.AlphaBlendValue := i;
-      sleep(1);
-    end;
-  end
-  else fVideoOn.AlphaBlendValue := 255;
+  fadeJanela(fVideoOn, 255);
 
   //O mesmo painel usado no player de arquivos passa a controlar o vídeo
   //online. A barra só ganha escala quando o YouTube informar a duração.
@@ -6910,6 +6890,62 @@ begin
   gravaParamLote(Arquivo, [item]);
 end;
 
+{
+  Faz a janela aparecer ou sumir suavemente, num prazo fixo.
+
+  O laço anterior dava 256 passos com sleep entre eles, então quem definia a
+  duração era a velocidade da máquina - num PC lento a animação se arrastava,
+  num rápido passava batido. Aqui a duração é a referência e o alfa sai do
+  tempo já decorrido: máquina lenta desenha menos quadros, mas termina no
+  mesmo instante.
+
+  O sleep continua para não ocupar a CPU à toa, e agora influencia apenas
+  quantos quadros são desenhados, nunca o prazo total.
+}
+procedure TfmIndex.fadeJanela(Janela: TForm; alvo: Integer);
+var
+  freq, t0, agora: Int64;
+  inicio, decorrido: Double;
+  valor: Integer;
+begin
+  if (Janela = nil) then
+    Exit;
+
+  if (alvo < 0) then
+    alvo := 0
+  else if (alvo > 255) then
+    alvo := 255;
+
+  QueryPerformanceFrequency(freq);
+
+  //Fade desligado, ou sem relógio de precisão: vai direto ao valor final
+  if (not ckFadeForm.Checked) or (freq = 0) or (fade_ms <= 0) then
+  begin
+    Janela.AlphaBlendValue := alvo;
+    Exit;
+  end;
+
+  inicio := Janela.AlphaBlendValue;
+  if (Trunc(inicio) = alvo) then
+    Exit;
+
+  QueryPerformanceCounter(t0);
+  repeat
+    QueryPerformanceCounter(agora);
+    decorrido := (agora - t0) * 1000 / freq;
+
+    if (decorrido >= fade_ms) then
+      valor := alvo
+    else
+      valor := Trunc(inicio + (alvo - inicio) * (decorrido / fade_ms));
+
+    Janela.AlphaBlendValue := valor;
+
+    if (valor <> alvo) then
+      Sleep(1);
+  until (valor = alvo);
+end;
+
 procedure TfmIndex.gravaParamServer(Grupo, Param, Valor: string);
 var
   ArqIni: TIniFile;
@@ -8790,8 +8826,7 @@ end;
 
 procedure TfmIndex.player(url: string;video: Boolean);
 var
-  monitor,i: integer;
-  erro: DWORD;
+  monitor: integer;
 begin
   if (fPlayer <> nil) then
     fPlayer.Close;
@@ -8821,6 +8856,7 @@ begin
     fPlayer.Width := monitorInfo(monitor).Width;
     fPlayer.Height := monitorInfo(monitor).Height;
 
+    fadeJanela(fPlayer, 255);
     fPlayer.Caption := ExtractFileName(url);
   end;
 
@@ -14130,7 +14166,6 @@ procedure TfmIndex.expandirArea(Sender: TObject);
 var
   abre: Boolean;
   monitor: Integer;
-  i: integer;
   item_config: string;
   botao: string;
 begin
@@ -14183,15 +14218,7 @@ begin
 
       copiaDadosTelaExtendida();
 
-      if ckFadeForm.Checked then
-      begin
-        for i := 0 to 255 do
-        begin
-          fMonitorMenuMusicas.AlphaBlendValue := i;
-          sleep(1);
-        end;
-      end
-      else fMonitorMenuMusicas.AlphaBlendValue := 255;
+      fadeJanela(fMonitorMenuMusicas, 255);
     end
     else
     if (botao = 'btExp_Biblia') then
@@ -14217,15 +14244,7 @@ begin
 
       copiaDadosTelaExtendida();
 
-      if ckFadeForm.Checked then
-      begin
-        for i := 0 to 255 do
-        begin
-          fMonitorBiblia.AlphaBlendValue := i;
-          sleep(1);
-        end;
-      end
-      else fMonitorBiblia.AlphaBlendValue := 255;
+      fadeJanela(fMonitorBiblia, 255);
     end
     else
     if (botao = 'btExp_BibliaBusca') then
@@ -14251,15 +14270,7 @@ begin
 
       copiaDadosTelaExtendida();
 
-      if ckFadeForm.Checked then
-      begin
-        for i := 0 to 255 do
-        begin
-          fMonitorBibliaBusca.AlphaBlendValue := i;
-          sleep(1);
-        end;
-      end
-      else fMonitorBibliaBusca.AlphaBlendValue := 255;
+      fadeJanela(fMonitorBibliaBusca, 255);
     end
     else
     if (botao = 'btExp_EscolaSabatina') then
@@ -14285,15 +14296,7 @@ begin
 
       copiaDadosTelaExtendida();
 
-      if ckFadeForm.Checked then
-      begin
-        for i := 0 to 255 do
-        begin
-          fMonitorCronometroCulto.AlphaBlendValue := i;
-          sleep(1);
-        end;
-      end
-      else fMonitorCronometroCulto.AlphaBlendValue := 255;
+      fadeJanela(fMonitorCronometroCulto, 255);
     end
     else
     if (botao = 'btExp_Sorteio') then
@@ -14319,15 +14322,7 @@ begin
 
       copiaDadosTelaExtendida();
 
-      if ckFadeForm.Checked then
-      begin
-        for i := 0 to 255 do
-        begin
-          fMonitorSorteio.AlphaBlendValue := i;
-          sleep(1);
-        end;
-      end
-      else fMonitorSorteio.AlphaBlendValue := 255;
+      fadeJanela(fMonitorSorteio, 255);
     end
     else
     if (botao = 'btExp_Cronometro') then
@@ -14353,15 +14348,7 @@ begin
 
       copiaDadosTelaExtendida();
 
-      if ckFadeForm.Checked then
-      begin
-        for i := 0 to 255 do
-        begin
-          fMonitorCronometro.AlphaBlendValue := i;
-          sleep(1);
-        end;
-      end
-      else fMonitorCronometro.AlphaBlendValue := 255;
+      fadeJanela(fMonitorCronometro, 255);
     end
     else
     if (botao = 'btExp_PainelD') then
@@ -14387,15 +14374,7 @@ begin
 
       copiaDadosTelaExtendida();
 
-      if ckFadeForm.Checked then
-      begin
-        for i := 0 to 255 do
-        begin
-          fMonitorPainelDinamico.AlphaBlendValue := i;
-          sleep(1);
-        end;
-      end
-      else fMonitorPainelDinamico.AlphaBlendValue := 255;
+      fadeJanela(fMonitorPainelDinamico, 255);
     end
     else
     if (botao = 'btExp_TextoInterativo') then
@@ -14419,15 +14398,7 @@ begin
 
       copiaDadosTelaExtendida();
 
-      if ckFadeForm.Checked then
-      begin
-        for i := 0 to 255 do
-        begin
-          fMonitorTextoInterativo.AlphaBlendValue := i;
-          sleep(1);
-        end;
-      end
-      else fMonitorTextoInterativo.AlphaBlendValue := 255;
+      fadeJanela(fMonitorTextoInterativo, 255);
     end
     else if (botao = 'btExp_Relogio') then
     begin
@@ -14452,15 +14423,7 @@ begin
 
       copiaDadosTelaExtendida();
 
-      if ckFadeForm.Checked then
-      begin
-        for i := 0 to 255 do
-        begin
-          fMonitorRelogio.AlphaBlendValue := i;
-          sleep(1);
-        end;
-      end
-      else fMonitorRelogio.AlphaBlendValue := 255;
+      fadeJanela(fMonitorRelogio, 255);
     end;
 
   end

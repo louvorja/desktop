@@ -57,21 +57,8 @@ end;
 
 procedure TfMonitorMenuMusicas.FormClose(Sender: TObject;
   var Action: TCloseAction);
-var
-  i: integer;
 begin
-  if (AlphaBlendValue > 0) then
-  begin
-    if fmIndex.ckFadeForm.Checked then
-    begin
-      for i := AlphaBlendValue downto 0 do
-      begin
-        AlphaBlendValue := i;
-        sleep(1);
-      end;
-    end
-    else AlphaBlendValue := 0;
-  end;
+  fmIndex.fadeJanela(Self, 0);
 
   fListaMusica.btExp_MenuMusicas.ImageIndex := 53;
 end;
