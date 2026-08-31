@@ -7,6 +7,7 @@ uses
   Dialogs, StdCtrls, Buttons, CustomizeDlg, DB, ADODB, ComCtrls, ImgList, Grids,
   DBGrids, IniFiles, Menus, ExtCtrls, IdBaseComponent, IdIPWatch,
   IdAntiFreeze, DBClient, IdHTTP, AppEvnts, ValEdit, Mask, MPlayer, DateUtils,
+  MMSystem,
   ActiveX, ShellApi, DBCtrls, OleCtrls, WinInet, OleCtnrs, CheckLst, pngimage,
   ToolWin, jpeg, IdCoder, IdCoderMIME,Vcl.DBCGrids, ClipBrd, urlmon, RichEdit,
   IdAntiFreezeBase, System.Zip, System.UITypes,
@@ -1396,6 +1397,9 @@ type
     ckPlayerAudio: TbsSkinCheckBox;
     bsSkinPanel164: TbsSkinPanel;
     bsSkinStdLabel159: TbsSkinStdLabel;
+    pnlInstalarCodecs: TbsSkinPanel;
+    lblInstalarCodecs: TbsSkinStdLabel;
+    btInstalarCodecs: TbsSkinButton;
     bsRibbonDivider75: TbsRibbonDivider;
     bsRibbonGroup12: TbsRibbonGroup;
     btHinoSlideMusica: TbsSkinSpeedButton;
@@ -1917,6 +1921,9 @@ type
     procedure abreSlidesPasta(dir: string);
     procedure abreArquivoMusica(musicaID: Integer;album: string = '';url: string = '');
     procedure player(url: string;video: Boolean = true);
+    function mciErroDeCodec(erro: DWORD): Boolean;
+    function avisaCodecAusente: Boolean;
+    procedure btInstalarCodecsClick(Sender: TObject);
     procedure sbVideoOnAreaExtendidaChange(Sender: TObject);
     procedure ckVideoOnJanelaClick(Sender: TObject);
     procedure bsSkinSpeedButton60Click(Sender: TObject);
@@ -2310,6 +2317,12 @@ uses
   fmCopiaLiturgiaDia, uInstanciaUnica;
 
 {$R *.dfm}
+
+const
+  //Página de download do codec pack que o player interno (MCI) exige para
+  //vídeo. Aponta para a página, não para o instalador: o nome do arquivo muda
+  //a cada versão lançada.
+  URL_CODECS = 'https://codecguide.com/download_k-lite_codec_pack_full.htm';
 
 
 Function TfmIndex.VersaoExe: String;
@@ -8712,9 +8725,73 @@ begin
   if btplPlay.Down then MediaPlayer1.Play;
 end;
 
+{
+  Classifica o código que o MediaPlayer1.Error guarda depois de um Open que
+  falhou. Lista de exclusão, e não de inclusão: qualquer falha ao abrir um
+  arquivo que existe significa que o player interno não dá conta dele, e na
+  prática isso é falta de codec. Inclusive o MCIERR_INTERNAL (277), que é o que
+  o MPEGVideo devolve quando não consegue montar o grafo de decodificação.
+
+  Comparação um a um: os MCIERR_ passam de 255 e não cabem em conjunto Delphi
+}
+function TfmIndex.mciErroDeCodec(erro: DWORD): Boolean;
+begin
+  Result := (erro <> 0) and
+            (erro <> MCIERR_FILE_NOT_FOUND) and
+            (erro <> MCIERR_INVALID_FILE) and
+            (erro <> MCIERR_OUT_OF_MEMORY);
+end;
+
+{
+  O player interno usa MCI, que depende dos codecs instalados no Windows. Sem
+  eles a mensagem do sistema ("Problema ao inicializar o MCI") não diz ao
+  operador o que fazer. Retorna True se ele optou por ver as instruções.
+
+  Cada Translate recebe uma linha só: o arquivo de idioma é nome=valor, e uma
+  quebra de linha dentro da chave o corromperia.
+}
+function TfmIndex.avisaCodecAusente: Boolean;
+var
+  td: TTaskDialog;
+  btSim, btPadrao: TTaskDialogButtonItem;
+begin
+  td := TTaskDialog.Create(nil);
+  try
+    td.Caption := TITULO;
+    td.MainIcon := tdiWarning;
+    td.Title := fIniciando.Translate('Não é possível executar este vídeo no player do programa: falta o codec necessário.');
+    td.Text := fIniciando.Translate('Deseja abrir a página de download do K-Lite Codec Pack Full agora?');
+    //Sem os botões padrão: os dois abaixo são os únicos caminhos
+    td.CommonButtons := [];
+
+    btSim := td.Buttons.Add as TTaskDialogButtonItem;
+    btSim.Caption := fIniciando.Translate('Sim');
+    btSim.ModalResult := mrYes;
+
+    btPadrao := td.Buttons.Add as TTaskDialogButtonItem;
+    btPadrao.Caption := fIniciando.Translate('Executar no player padrão');
+    btPadrao.ModalResult := mrNo;
+
+    td.Execute;
+    //Qualquer coisa diferente de Sim cai no player padrão, que é o seguro
+    Result := (td.ModalResult = mrYes);
+  finally
+    td.Free;
+  end;
+
+  if Result then
+    ShellExecute(handle, nil, PChar(URL_CODECS), nil, nil, SW_MAXIMIZE);
+end;
+
+procedure TfmIndex.btInstalarCodecsClick(Sender: TObject);
+begin
+  ShellExecute(handle, nil, PChar(URL_CODECS), nil, nil, SW_MAXIMIZE);
+end;
+
 procedure TfmIndex.player(url: string;video: Boolean);
 var
   monitor,i: integer;
+  erro: DWORD;
 begin
   if (fPlayer <> nil) then
     fPlayer.Close;
@@ -8733,6 +8810,8 @@ begin
       fPlayer.BorderStyle := bsNone
     else
       fPlayer.BorderStyle := bsSizeable;
+    //Nasce invisível e só aparece depois que o Open der certo: falhando, o
+    //operador não chega a ver a tela cheia preta piscar antes do aviso
     fPlayer.AlphaBlend := True;
     fPlayer.AlphaBlendValue := 0;
     fPlayer.Show;
@@ -8742,15 +8821,6 @@ begin
     fPlayer.Width := monitorInfo(monitor).Width;
     fPlayer.Height := monitorInfo(monitor).Height;
 
-    if ckFadeForm.Checked then
-    begin
-      for i := 0 to 255 do
-      begin
-        fPlayer.AlphaBlendValue := i;
-        sleep(1);
-      end;
-    end
-    else fPlayer.AlphaBlendValue := 255;
     fPlayer.Caption := ExtractFileName(url);
   end;
 
@@ -8766,6 +8836,21 @@ begin
     if (fPlayer <> nil) then
       fPlayer.ajustaProporcao;
     MediaPlayer1.Play;
+
+    //Só agora a janela aparece, já com o vídeo montado
+    if (video) and (fPlayer <> nil) then
+    begin
+      if ckFadeForm.Checked then
+      begin
+        for i := 0 to 255 do
+        begin
+          fPlayer.AlphaBlendValue := i;
+          sleep(1);
+        end;
+      end
+      else fPlayer.AlphaBlendValue := 255;
+    end;
+
     btplPlay.Down := True;
     btplPause.Down := False;
     pbPlayer.MaxValue := MediaPlayer1.Length;
@@ -8776,9 +8861,29 @@ begin
   except
     on E: Exception do
     begin
-      Application.MessageBox(PChar('Ocorreu um erro ao executar arquivo: '+E.Message+#13#10+'Pressione Ok para abrir o arquivo!'),TITULO,mb_ok+mb_iconerror);
-      abrirArquivo(url,true);
+      //MediaPlayer1.Error guarda o código MCI bruto do Open que falhou (a
+      //exceção só traz o texto já formatado). Lido antes de fechar, que é
+      //quem poderia sobrescrever
+      erro := DWORD(MediaPlayer1.Error);
+      gravaLog('Falha no player interno ('+IntToStr(erro)+'): '+E.ClassName+': '+E.Message);
+
+      //Fecha antes do diálogo: com um monitor só, a janela do player está em
+      //tela cheia e a caixa de mensagem ficaria atrás dela
       btplFecharClick(nil);
+
+      if (E is EMCIDeviceError) and mciErroDeCodec(erro) then
+      begin
+        if not avisaCodecAusente then
+          abrirArquivo(url,true);
+      end
+      else
+      begin
+        Application.MessageBox(PChar(
+          fIniciando.Translate('Ocorreu um erro ao executar arquivo:')+' '+E.Message+#13#10+
+          fIniciando.Translate('Pressione Ok para abrir o arquivo!')),
+          TITULO,mb_ok+mb_iconerror);
+        abrirArquivo(url,true);
+      end;
     end;
   end;
 end;
@@ -9094,11 +9199,10 @@ begin
     Exit;
   end;
 
-  try
+  //Stop exige o device aberto; sem a guarda ele levanta EMCIDeviceError sempre
+  //que o Open falhou antes, o que polui o depurador a cada erro de codec
+  if (MediaPlayer1.DeviceID <> 0) then
     MediaPlayer1.Stop;
-  except
-    //
-  end;
   MediaPlayer1.Close;
   MediaPlayer1.FileName := '';
 
