@@ -602,6 +602,44 @@ object fTransmitir: TfTransmitir
       ExplicitWidth = 139
       ExplicitHeight = 17
     end
+    object btQRCodeMus1: TbsSkinSpeedButton
+      Left = 446
+      Top = 0
+      Width = 91
+      Height = 24
+      HintImageIndex = 0
+      SkinData = DM.bsSkinData1
+      SkinDataName = 'resizetoolbutton'
+      DefaultFont.Charset = DEFAULT_CHARSET
+      DefaultFont.Color = clWindowText
+      DefaultFont.Height = 13
+      DefaultFont.Name = 'Tahoma'
+      DefaultFont.Style = []
+      DefaultWidth = 0
+      DefaultHeight = 0
+      UseSkinFont = True
+      CheckedMode = False
+      ImageList = DM.ico_16x16
+      UseSkinSize = True
+      UseSkinFontColor = True
+      WidthWithCaption = 0
+      WidthWithoutCaption = 0
+      ImageIndex = -1
+      RepeatMode = False
+      RepeatInterval = 100
+      Transparent = True
+      Flat = True
+      AllowAllUp = False
+      Down = False
+      GroupIndex = 0
+      Caption = 'QR Code'
+      ShowCaption = True
+      NumGlyphs = 1
+      Align = alRight
+      Margin = 5
+      Spacing = 1
+      OnClick = btQRCodeClick
+    end
     object btCopLinkMus1: TbsSkinSpeedButton
       Left = 537
       Top = 0
@@ -745,6 +783,44 @@ object fTransmitir: TfTransmitir
       ExplicitLeft = 78
       ExplicitWidth = 139
       ExplicitHeight = 17
+    end
+    object btQRCodeMus2: TbsSkinSpeedButton
+      Left = 446
+      Top = 0
+      Width = 91
+      Height = 24
+      HintImageIndex = 0
+      SkinData = DM.bsSkinData1
+      SkinDataName = 'resizetoolbutton'
+      DefaultFont.Charset = DEFAULT_CHARSET
+      DefaultFont.Color = clWindowText
+      DefaultFont.Height = 13
+      DefaultFont.Name = 'Tahoma'
+      DefaultFont.Style = []
+      DefaultWidth = 0
+      DefaultHeight = 0
+      UseSkinFont = True
+      CheckedMode = False
+      ImageList = DM.ico_16x16
+      UseSkinSize = True
+      UseSkinFontColor = True
+      WidthWithCaption = 0
+      WidthWithoutCaption = 0
+      ImageIndex = -1
+      RepeatMode = False
+      RepeatInterval = 100
+      Transparent = True
+      Flat = True
+      AllowAllUp = False
+      Down = False
+      GroupIndex = 0
+      Caption = 'QR Code'
+      ShowCaption = True
+      NumGlyphs = 1
+      Align = alRight
+      Margin = 5
+      Spacing = 1
+      OnClick = btQRCodeClick
     end
     object btCopLinkMus2: TbsSkinSpeedButton
       Left = 537
@@ -1030,6 +1106,44 @@ object fTransmitir: TfTransmitir
       ExplicitLeft = 78
       ExplicitWidth = 139
       ExplicitHeight = 17
+    end
+    object btQRCodeBib1: TbsSkinSpeedButton
+      Left = 446
+      Top = 0
+      Width = 91
+      Height = 24
+      HintImageIndex = 0
+      SkinData = DM.bsSkinData1
+      SkinDataName = 'resizetoolbutton'
+      DefaultFont.Charset = DEFAULT_CHARSET
+      DefaultFont.Color = clWindowText
+      DefaultFont.Height = 13
+      DefaultFont.Name = 'Tahoma'
+      DefaultFont.Style = []
+      DefaultWidth = 0
+      DefaultHeight = 0
+      UseSkinFont = True
+      CheckedMode = False
+      ImageList = DM.ico_16x16
+      UseSkinSize = True
+      UseSkinFontColor = True
+      WidthWithCaption = 0
+      WidthWithoutCaption = 0
+      ImageIndex = -1
+      RepeatMode = False
+      RepeatInterval = 100
+      Transparent = True
+      Flat = True
+      AllowAllUp = False
+      Down = False
+      GroupIndex = 0
+      Caption = 'QR Code'
+      ShowCaption = True
+      NumGlyphs = 1
+      Align = alRight
+      Margin = 5
+      Spacing = 1
+      OnClick = btQRCodeClick
     end
     object btCopLinkBib1: TbsSkinSpeedButton
       Left = 537
@@ -1387,6 +1501,44 @@ object fTransmitir: TfTransmitir
     Spacing = 2
     Caption = 'bsSkinPanel10'
     Align = alTop
+    object btQRCode: TbsSkinSpeedButton
+      Left = 446
+      Top = 0
+      Width = 91
+      Height = 24
+      HintImageIndex = 0
+      SkinData = DM.bsSkinData1
+      SkinDataName = 'resizetoolbutton'
+      DefaultFont.Charset = DEFAULT_CHARSET
+      DefaultFont.Color = clWindowText
+      DefaultFont.Height = 13
+      DefaultFont.Name = 'Tahoma'
+      DefaultFont.Style = []
+      DefaultWidth = 0
+      DefaultHeight = 0
+      UseSkinFont = True
+      CheckedMode = False
+      ImageList = DM.ico_16x16
+      UseSkinSize = True
+      UseSkinFontColor = True
+      WidthWithCaption = 0
+      WidthWithoutCaption = 0
+      ImageIndex = -1
+      RepeatMode = False
+      RepeatInterval = 100
+      Transparent = True
+      Flat = True
+      AllowAllUp = False
+      Down = False
+      GroupIndex = 0
+      Caption = 'QR Code'
+      ShowCaption = True
+      NumGlyphs = 1
+      Align = alRight
+      Margin = 5
+      Spacing = 1
+      OnClick = btQRCodeClick
+    end
     object btCopLink: TbsSkinSpeedButton
       Left = 537
       Top = 0
@@ -1491,7 +1643,7 @@ object fTransmitir: TfTransmitir
       UseSkinFontColor = True
       BorderStyle = bvNone
       Align = alLeft
-      Caption = 'Link: '
+      Caption = 'Controle Remoto: '
       AutoSize = True
     end
   end

@@ -56,6 +56,10 @@ type
     bsSkinPanel9: TbsSkinPanel;
     bsSkinLabel7: TbsSkinLabel;
     btCopLink: TbsSkinSpeedButton;
+    btQRCode: TbsSkinSpeedButton;
+    btQRCodeMus1: TbsSkinSpeedButton;
+    btQRCodeMus2: TbsSkinSpeedButton;
+    btQRCodeBib1: TbsSkinSpeedButton;
     lblLink: TbsSkinLinkLabel;
     Panel1: TPanel;
     bsSkinStdLabel1: TbsSkinStdLabel;
@@ -76,6 +80,7 @@ type
     procedure ckSrvAltIPPortaClick(Sender: TObject);
     procedure FormActivate(Sender: TObject);
     procedure btCopLinkClick(Sender: TObject);
+    procedure btQRCodeClick(Sender: TObject);
     function geraToken():string;
     procedure seSrvTokenExit(Sender: TObject);
     procedure bsSkinSpeedButton1Click(Sender: TObject);
@@ -201,9 +206,7 @@ implementation
 {$R *.dfm}
 
 uses
-  fmMusica, fmMenu, dmComponentes, fmMonitorSorteio, fmVideoOn, Vcl.MPlayer,
-  System.SyncObjs,
-  System.StrUtils, System.IOUtils, IdURI, IdGlobal;
+  fmMusica, fmMenu, fmQRCode;
 
 // ── Enumeração de interfaces de rede (iphlpapi) ─────────────────────────────
 
@@ -361,6 +364,52 @@ begin
   Clipboard.AsText := lblLink.Caption;
 end;
 
+{
+  Atende os quatro botões de QR.
+
+  O endereço é descoberto pelo painel em que o botão está, procurando o rótulo
+  de link vizinho. Assim um handler serve a todos, e continua servindo se
+  alguém acrescentar outro link seguindo o mesmo arranjo.
+}
+procedure TfTransmitir.btQRCodeClick(Sender: TObject);
+var
+  painel: TWinControl;
+  i: Integer;
+  endereco, descricao: string;
+begin
+  if not (Sender is TControl) then
+    Exit;
+
+  painel := TControl(Sender).Parent;
+  if (painel = nil) then
+    Exit;
+
+  for i := 0 to painel.ControlCount - 1 do
+  begin
+    if (painel.Controls[i] is TbsSkinLinkLabel) then
+      endereco := TbsSkinLinkLabel(painel.Controls[i]).Caption
+    //O rótulo à esquerda diz de que link se trata: "Controle Remoto", "Link -
+    //Transmissão" e assim por diante
+    else if (painel.Controls[i] is TbsSkinLabel) then
+      descricao := TbsSkinLabel(painel.Controls[i]).Caption;
+  end;
+
+  if (Trim(endereco) = '') then
+  begin
+    Application.MessageBox('Inicie o servidor para gerar o QR Code.',
+      PChar(fmIndex.TITULO), mb_ok + mb_iconinformation);
+    Exit;
+  end;
+
+  descricao := Trim(StringReplace(descricao, ':', '', [rfReplaceAll]));
+  if (descricao = '') then
+    descricao := 'QR Code'
+  else
+    descricao := 'QR Code - ' + descricao;
+
+  mostraQRCode(endereco, descricao);
+end;
+
 procedure TfTransmitir.btCopLinkMus1Click(Sender: TObject);
 begin
   Clipboard.AsText := lblLinkMus1.Caption;
@@ -449,7 +498,10 @@ begin
       fmIndex.spServer.Caption := url;
       lblStatus.Caption := 'Conectado';
 
-      lblLink.Caption := url;
+      //O controle remoto leva o token na URL para já abrir conectado. A
+      //página o guarda e limpa o endereço em seguida, para ele não ficar
+      //exposto na barra do navegador nem no histórico.
+      lblLink.Caption := url + '/?token=' + seSrvToken.Text;
       lblLink.URL := lblLink.Caption;
       lblLinkMus1.Caption := url+'/musica?transmissao';
       lblLinkMus1.URL := lblLinkMus1.Caption;
