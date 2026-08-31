@@ -253,6 +253,7 @@ begin
   fmIndex.ckMusicaOperador.Checked := (fmIndex.lerParam('Musicas', 'ModoOperador', '1') = '1');
   fmIndex.ckMusicaRetorno.Checked := (fmIndex.lerParam('Musicas', 'ModoRetorno', '0') = '1');
   fmIndex.ckMusicaTituloSlide.Checked := (fmIndex.lerParam('Musicas', 'TituloSlide', '1') = '1');
+  fmIndex.ckMusicaNumeroHino.Checked := (fmIndex.lerParam('Musicas', 'NumeroHino', '1') = '1');
   fmIndex.ckVideoOnJanela.Checked := (fmIndex.lerParam('Videos Online', 'MonitorTelaCheia', '1') = '1');
   fmIndex.sbVideoOnAbreLiturgia.ItemIndex := StrToInt(fmIndex.lerParam('Videos Online', 'Player Liturgia', '1'));
   fmIndex.sbAlinhMusica.ItemIndex := StrToInt(fmIndex.lerParam('Musicas', 'Alinhamento', '1'));
@@ -309,7 +310,9 @@ begin
   if externo then
   begin
     //**SE ARQUIVO EXTERNO, ABRE ARQUIVO****************************************
-    fmIndex.processaArquivo(ParamStr(1));
+    //Programa aberto so para exibir este arquivo: sendo invalido, avisa e
+    //encerra, porque nao ha sessao nenhuma para preservar
+    fmIndex.processaArquivo(ParamStr(1), True);
     fIniciando.Visible := False;
   end
   else

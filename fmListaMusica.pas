@@ -24,6 +24,7 @@ type
     bsSkinDBText2: TbsSkinDBText;
     Panel3: TPanel;
     pnlBotoes: TPanel;
+    lblDicaPB: TbsSkinStdLabel;
     bsSkinSpeedButton6: TbsSkinSpeedButton;
     btExp_MenuMusicas: TbsSkinMenuSpeedButton;
     bsPngImageView1: TbsPngImageView;
@@ -47,6 +48,15 @@ type
     procedure btExp_MenuMusicasShowTrackMenu(Sender: TObject);
   private
     { Private declarations }
+    // Estado da linha ativa, guardado enquanto o painel dela e pintado
+    ativoConhecido, ativoSlide, ativoCantado, ativoPB, ativoAudio,
+    ativoAudioPB, ativoLetra: boolean;
+    reaplicando: boolean;
+    wpGrid: TWndMethod;
+    procedure aplicaBotoesItem(slide, temCantado, temPB, temAudio,
+      temAudioPB, temLetra: boolean);
+    procedure restauraLinhaAtiva;
+    procedure gridWindowProc(var Message: TMessage);
   public
     { Public declarations }
     id_album: integer;
@@ -61,11 +71,15 @@ implementation
 
 {$R *.dfm}
 
-uses fmMenu, dmComponentes, fmMonitorMenuMusicas;
+uses fmMenu, dmComponentes, fmMonitorMenuMusicas, Data.DB;
 
 procedure TfListaMusica.bsSkinSpeedButton6Click(Sender: TObject);
 begin
-  fmIndex.abreLetraMusicaAlbum(DM.qrMUSICAS.FieldByName('ID_ALBUM').AsInteger);
+  //Coletanea personalizada: a fila e a pasta, nao um album do banco
+  if (DBCtrlGrid.DataSource <> DM.dsMUSICAS) then
+    fmIndex.abreSlidesPasta(dir)
+  else
+    fmIndex.abreLetraMusicaAlbum(DM.qrMUSICAS.FieldByName('ID_ALBUM').AsInteger);
 end;
 
 procedure TfListaMusica.btExp_MenuMusicasClick(Sender: TObject);
@@ -83,30 +97,157 @@ begin
 end;
 
 procedure TfListaMusica.DBCtrlGridClick(Sender: TObject);
+var
+  ds: TDataSet;
+  tag: integer;
 begin
-  if DBCtrlGrid.DataSource = DM.dsMUSICAS
-    then fmIndex.dbctrlMusicasClick(Sender)
-    else fmIndex.abrirArquivo(DBCtrlGrid.DataSource.DataSet.FieldByName('DIR').AsString);
+  if DBCtrlGrid.DataSource = DM.dsMUSICAS then
+  begin
+    fmIndex.dbctrlMusicasClick(Sender);
+    Exit;
+  end;
+
+  ds := DBCtrlGrid.DataSource.DataSet;
+  tag := TComponent(Sender).Tag;
+
+  // Fora dos pacotes de slides nao ha botao algum: o clique so pode ter vindo
+  // do corpo do item, que abre o arquivo como sempre abriu. No corpo de um
+  // pacote vale o mesmo, e DIR ja aponta para a versao cantada - ou para o
+  // playback, quando so ele existe.
+  if (tag < 1) or (tag > 5) or not ds.FieldByName('EH_SLIDE').AsBoolean
+    then fmIndex.abrirArquivo(ds.FieldByName('DIR').AsString)
+    else fmIndex.abreSlidesArquivo(ds.FieldByName('DIR').AsString,
+                                   ds.FieldByName('DIR_PB').AsString, tag);
+end;
+
+{
+  Configura os botoes do item para um registro.
+
+  Os botoes sao um jogo unico, compartilhado por todas as linhas: o grid
+  reconfigura e redesenha esse mesmo jogo uma vez por linha. Por isso tudo o
+  que distingue uma linha da outra passa por aqui.
+
+  Cada coluna encolhe junto com o botao dela, para nao deixar buraco na linha.
+}
+procedure TfListaMusica.aplicaBotoesItem(slide, temCantado, temPB, temAudio,
+  temAudioPB, temLetra: boolean);
+
+  procedure coluna(indice: Integer; visivel: boolean);
+  begin
+    if visivel
+      then GridPanel2.ColumnCollection[indice].Value := 40
+      else GridPanel2.ColumnCollection[indice].Value := 0;
+  end;
+
+begin
+  // Sem versao cantada o item e so playback: o botao de cantado abriria o
+  // mesmo arquivo do botao de playback, entao nao faz sentido mostra-lo
+  bsPngImageView1.Visible := slide and temCantado;
+  btSlidePB.Visible := slide and temPB;
+  btSlideLetra.Visible := slide;
+  // Sem faixa no pacote nao ha o que tocar sozinho
+  btMusica.Visible := slide and temCantado and temAudio;
+  btMusicaPB.Visible := slide and temPB and temAudioPB;
+  btLetra.Visible := slide and temLetra;
+
+  coluna(3, bsPngImageView1.Visible);
+  coluna(4, btSlidePB.Visible);
+  coluna(5, btSlideLetra.Visible);
+  coluna(6, btMusica.Visible);
+  coluna(7, btMusicaPB.Visible);
+  coluna(8, btLetra.Visible);
+end;
+
+{
+  Reaplica na linha ativa o estado que e dela.
+
+  Na linha ativa os botoes nao sao pixels ja gravados: sao as janelas reais,
+  sobrepostas ao painel. O grid desenha uma linha de cada vez reconfigurando
+  esse mesmo jogo de botoes, entao ao fim da passada eles ficam com o estado do
+  ultimo registro desenhado - e era isso que a linha ativa exibia.
+
+  Tem de ser depois da passada inteira: dentro do OnPaintPanel os controles
+  filhos daquela linha ainda nao foram desenhados, e mexer neles ali estraga o
+  desenho da propria linha.
+}
+procedure TfListaMusica.restauraLinhaAtiva;
+begin
+  if not ativoConhecido or reaplicando then
+    Exit;
+
+  reaplicando := True;
+  try
+    aplicaBotoesItem(ativoSlide, ativoCantado, ativoPB, ativoAudio,
+      ativoAudioPB, ativoLetra);
+  finally
+    reaplicando := False;
+  end;
+end;
+
+{
+  O WM_PAINT do grid so retorna depois de desenhados todos os paineis, entao e
+  aqui que da para deixar os botoes como a linha ativa pede.
+
+  Sendo sincrono, tambem acerta o clique: WMLButtonDown chama SetPanelIndex, que
+  repinta o grid na hora, e so entao usa WindowFromPoint para saber em que botao
+  o usuario clicou. Com o layout do registro anterior as colunas de playback
+  deslocavam os botoes em 40px e o clique caia no vizinho.
+}
+procedure TfListaMusica.gridWindowProc(var Message: TMessage);
+begin
+  wpGrid(Message);
+  if (Message.Msg = WM_PAINT) then
+    restauraLinhaAtiva;
 end;
 
 procedure TfListaMusica.DBCtrlGridPaintPanel(DBCtrlGrid: TDBCtrlGrid;
   Index: Integer);
+var
+  ds: TDataSet;
+  slide, temCantado, temPB, temAudio, temAudioPB, temLetra: boolean;
 begin
-  if DBCtrlGrid.DataSource <> DM.dsMUSICAS then Exit;
+  if (DBCtrlGrid.DataSource = nil) or (DBCtrlGrid.DataSource.DataSet = nil) then
+    Exit;
 
-  if (DBCtrlGrid.DataSource.DataSet.FieldByName('URL_INSTRUMENTAL').AsString <> '') then
+  ds := DBCtrlGrid.DataSource.DataSet;
+
+  if (DBCtrlGrid.DataSource = DM.dsMUSICAS) then
   begin
-    btSlidePB.Visible := true;
-    btMusicaPB.Visible := true;
-    GridPanel2.ColumnCollection[4].Value := 40;
-    GridPanel2.ColumnCollection[7].Value := 40;
+    slide := True;
+    temCantado := True;
+    temPB := (ds.FieldByName('URL_INSTRUMENTAL').AsString <> '');
+    temAudio := True;
+    temAudioPB := temPB;
+    temLetra := True;
   end
   else
   begin
-    btSlidePB.Visible := false;
-    btMusicaPB.Visible := false;
-    GridPanel2.ColumnCollection[4].Value := 0;
-    GridPanel2.ColumnCollection[7].Value := 0;
+    // Coletanea personalizada: so os pacotes de slides tem o que oferecer.
+    // Qualquer outro arquivo segue sem botao nenhum, como sempre foi.
+    slide := ds.FieldByName('EH_SLIDE').AsBoolean;
+    temPB := ds.FieldByName('DIR_PB').AsString <> '';
+    // DIR aponta para a versao cantada; so quando ela falta e que ele repete
+    // o playback, e ai o item e playback puro
+    temCantado := ds.FieldByName('DIR').AsString <>
+                  ds.FieldByName('DIR_PB').AsString;
+    temAudio := ds.FieldByName('TEM_AUDIO').AsBoolean;
+    temAudioPB := ds.FieldByName('TEM_AUDIO_PB').AsBoolean;
+    // A letra sozinha nao entra nas personalizadas: exigiria outro form
+    temLetra := False;
+  end;
+
+  aplicaBotoesItem(slide, temCantado, temPB, temAudio, temAudioPB, temLetra);
+
+  // Guarda o que a linha ativa pede; restauraLinhaAtiva devolve isso ao fim
+  if (Index = DBCtrlGrid.PanelIndex) then
+  begin
+    ativoSlide := slide;
+    ativoCantado := temCantado;
+    ativoPB := temPB;
+    ativoAudio := temAudio;
+    ativoAudioPB := temAudioPB;
+    ativoLetra := temLetra;
+    ativoConhecido := True;
   end;
 end;
 
@@ -115,6 +256,10 @@ var
   sr : TSearchRec;
   iRetorno : Integer;
   i: integer;
+  naoSlides, naFila, semAudio: integer;
+  ext, nome, chave, arqCantado, arqPB: string;
+  ehPB, ehSlide, temAudio, temAudioPB: boolean;
+  ordem, dados: TStringList;
 begin
   if (inicio <> true) then
   begin
@@ -122,12 +267,22 @@ begin
 
     fmIndex.monitor_bt_label(btExp_MenuMusicas);
 
+    // O WM_PAINT do grid so termina depois de desenhados todos os paineis:
+    // e de la que a linha ativa recupera o estado que e dela
+    wpGrid := DBCtrlGrid.WindowProc;
+    DBCtrlGrid.WindowProc := gridWindowProc;
+
     bsPngImageView1.Visible := (DBCtrlGrid.DataSource = DM.dsMUSICAS);
     btSlidePB.Visible := (DBCtrlGrid.DataSource = DM.dsMUSICAS);
     btSlideLetra.Visible := (DBCtrlGrid.DataSource = DM.dsMUSICAS);
     btMusica.Visible := (DBCtrlGrid.DataSource = DM.dsMUSICAS);
     btMusicaPB.Visible := (DBCtrlGrid.DataSource = DM.dsMUSICAS);
     btLetra.Visible := (DBCtrlGrid.DataSource = DM.dsMUSICAS);
+
+    // Na pasta estes so aparecem se o conteudo dela permitir
+    lblDicaPB.Visible := False;
+    bsSkinSpeedButton6.Visible := (DBCtrlGrid.DataSource = DM.dsMUSICAS);
+    btExp_MenuMusicas.Visible := (DBCtrlGrid.DataSource = DM.dsMUSICAS);
 
     if DBCtrlGrid.DataSource = DM.dsMUSICAS then
     begin
@@ -156,24 +311,138 @@ begin
       if not(DirectoryExists(dir)) then
         Exit;
 
-      iRetorno := FindFirst(dir + '*.*', faAnyFile, sr);
-      i := 0;
-      while iRetorno = 0 do
-      begin
-        if (sr.Name <> '.') and (sr.Name <> '..') then
-          if sr.Attr <> faDirectory then
+      naoSlides := 0;
+      naFila := 0;
+      semAudio := 0;
+
+      // Cada entrada de "ordem" e uma musica da lista: a chave ordena e o
+      // objeto carrega o que foi encontrado para ela na pasta
+      //   [0] nome exibido  [1] arquivo cantado  [2] arquivo playback
+      ordem := TStringList.Create;
+      try
+        iRetorno := FindFirst(dir + '*.*', faAnyFile, sr);
+        try
+          while iRetorno = 0 do
           begin
-            i := i+1;
-            DM.cdsArquivos.Append;
-            DM.cdsArquivos.FieldByName('FAIXA').Value := i;
-            DM.cdsArquivos.FieldByName('NOME').Value := ChangeFileExt(sr.Name,'');
-            DM.cdsArquivos.FieldByName('DIR').Value := dir+sr.Name;
-            DM.cdsArquivos.Post;
+            if (sr.Name <> '.') and (sr.Name <> '..') and
+               (sr.Attr <> faDirectory) then
+            begin
+              ext := LowerCase(ExtractFileExt(sr.Name));
+
+              // O .ini nao e conteudo da coletanea: e arquivo de controle do
+              // proprio Windows (desktop.ini) e so poluiria a lista
+              if (ext = '.ini') then
+              begin
+                iRetorno := FindNext(sr);
+                Continue;
+              end;
+
+              nome := Trim(ChangeFileExt(sr.Name, ''));
+              ehSlide := (ext = '.slja') or (ext = '.lja');
+
+              if ehSlide then
+              begin
+                // Cantado e playback sao dois arquivos, mas uma musica so na
+                // lista. O sufixo de playback e reconhecido pelo fmMenu, que
+                // devolve o nome sem ele; o pareamento vale ainda que as
+                // extensoes dos dois sejam diferentes.
+                ehPB := fmIndex.ehNomePlayback(nome);
+                chave := LowerCase(nome);
+              end
+              else
+              begin
+                // Arquivo comum nao pareia com nada; entra como item avulso
+                ehPB := False;
+                chave := LowerCase(sr.Name);
+              end;
+
+              i := ordem.IndexOf(chave);
+              if (i < 0) or not ehSlide then
+              begin
+                dados := TStringList.Create;
+                // A primeira grafia encontrada e a que aparece na lista
+                dados.Add(nome);
+                dados.Add('');
+                dados.Add('');
+                if ehSlide then dados.Add('1') else dados.Add('0');
+                i := ordem.AddObject(chave, dados);
+              end;
+
+              dados := TStringList(ordem.Objects[i]);
+              if ehPB
+                then dados[2] := dir + sr.Name
+                else dados[1] := dir + sr.Name;
+
+              if not ehSlide then
+                Inc(naoSlides);
+            end;
+            iRetorno := FindNext(sr);
           end;
-          iRetorno := FindNext(sr);
+        finally
+          FindClose(sr);
+        end;
+
+        ordem.Sort;
+
+        for i := 0 to ordem.Count - 1 do
+        begin
+          dados := TStringList(ordem.Objects[i]);
+          ehSlide := (dados[3] = '1');
+          arqCantado := dados[1];
+          arqPB := dados[2];
+
+          // Um pacote sem musica, ou com a musica desligada nas opcoes, se
+          // comporta como se fosse so letra: nada toca
+          temAudio := (arqCantado <> '') and fmIndex.slidesTemAudio(arqCantado);
+          temAudioPB := (arqPB <> '') and fmIndex.slidesTemAudio(arqPB);
+
+          // A fila toca a versao cantada; so quando ela nao existe e que o
+          // playback assume o lugar dela
+          if (arqCantado <> '') then
+          begin
+            Inc(naFila);
+            if not temAudio then
+              Inc(semAudio);
+          end
+          else if (arqPB <> '') then
+          begin
+            Inc(naFila);
+            if not temAudioPB then
+              Inc(semAudio);
+          end;
+
+          DM.cdsArquivos.Append;
+          DM.cdsArquivos.FieldByName('FAIXA').Value := i + 1;
+          DM.cdsArquivos.FieldByName('NOME').Value := dados[0];
+          // Sem versao cantada, o corpo do item abre o playback
+          if (arqCantado <> '')
+            then DM.cdsArquivos.FieldByName('DIR').Value := arqCantado
+            else DM.cdsArquivos.FieldByName('DIR').Value := arqPB;
+          DM.cdsArquivos.FieldByName('DIR_PB').Value := arqPB;
+          DM.cdsArquivos.FieldByName('TEM_AUDIO').Value := temAudio;
+          DM.cdsArquivos.FieldByName('TEM_AUDIO_PB').Value := temAudioPB;
+          DM.cdsArquivos.FieldByName('EH_SLIDE').Value := ehSlide;
+          DM.cdsArquivos.Post;
+        end;
+      finally
+        for i := 0 to ordem.Count - 1 do
+          ordem.Objects[i].Free;
+        ordem.Free;
       end;
-      FindClose(sr);
+
       DM.cdsArquivos.First;
+
+      // Reproduzir todas encadeia uma pasta so de slides. Fica escondido
+      // quando ha arquivo de outro tipo, quando algum item nao toca audio (a
+      // fila pararia nele) ou quando nao ha nada para tocar. So playback
+      // tambem vale: a cantada e preferida, mas nao e exigida.
+      bsSkinSpeedButton6.Visible := (naoSlides = 0) and (semAudio = 0) and
+                                    (naFila > 0);
+      // O -PB e uma convencao de nome, entao precisa estar dita em algum lugar
+      lblDicaPB.Visible := (naoSlides = 0) and (DM.cdsArquivos.RecordCount > 0);
+      // Quem abre a pasta esconde a faixa de botoes, porque ate agora ela nao
+      // tinha o que oferecer aqui; agora tem, quando o conteudo permite
+      pnlBotoes.Visible := bsSkinSpeedButton6.Visible or lblDicaPB.Visible;
       DBCtrlGrid.Visible := True;
     end;
 

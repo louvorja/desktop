@@ -36,6 +36,7 @@ type
     qrONL_PLAYLISTS_TUDO: TFDQuery;
     qrONL_VIDEOS_TUDO: TFDQuery;
     qrHINOS_LITURGIA: TFDQuery;
+    qrHINO_NUMERO: TFDQuery;
     qrSEL_COLETANEAS_ID: TFDQuery;
     qrVERSAO: TFDQuery;
     qrMUSICAS_INFANTIS: TFDQuery;

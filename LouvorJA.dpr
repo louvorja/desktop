@@ -40,6 +40,8 @@ uses
   fmMonitorMenuMusicas in 'fmMonitorMenuMusicas.pas' {fMonitorMenuMusicas},
   fmIdentificaMonitores in 'fmIdentificaMonitores.pas' {fIdentificaMonitores},
   fmCopiaLiturgiaDia in 'fmCopiaLiturgiaDia.pas',
+  DelphiZXingQRCode in 'components\DelphiZXingQRCode\DelphiZXingQRCode.pas',
+  fmQRCode in 'fmQRCode.pas',
   uInstanciaUnica in 'uInstanciaUnica.pas';
 
 {$R *.res}

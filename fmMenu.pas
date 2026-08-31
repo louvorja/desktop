@@ -7,6 +7,7 @@ uses
   Dialogs, StdCtrls, Buttons, CustomizeDlg, DB, ADODB, ComCtrls, ImgList, Grids,
   DBGrids, IniFiles, Menus, ExtCtrls, IdBaseComponent, IdIPWatch,
   IdAntiFreeze, DBClient, IdHTTP, AppEvnts, ValEdit, Mask, MPlayer, DateUtils,
+  MMSystem,
   ActiveX, ShellApi, DBCtrls, OleCtrls, WinInet, OleCtnrs, CheckLst, pngimage,
   ToolWin, jpeg, IdCoder, IdCoderMIME,Vcl.DBCGrids, ClipBrd, urlmon, RichEdit,
   IdAntiFreezeBase, System.Zip, System.UITypes,
@@ -684,6 +685,8 @@ type
     bsSkinButton35: TbsSkinButton;
     bsSkinPanel65: TbsSkinPanel;
     ckMusicaTituloSlide: TbsSkinCheckBox;
+    ckMusicaNumeroHino: TbsSkinCheckBox;
+    bsSkinPanelNumHino: TbsSkinPanel;
     ampSincroniza: TbsAppMenuPage;
     bsSkinPanel66: TbsSkinPanel;
     bsSkinPanel67: TbsSkinPanel;
@@ -1394,6 +1397,9 @@ type
     ckPlayerAudio: TbsSkinCheckBox;
     bsSkinPanel164: TbsSkinPanel;
     bsSkinStdLabel159: TbsSkinStdLabel;
+    pnlInstalarCodecs: TbsSkinPanel;
+    lblInstalarCodecs: TbsSkinStdLabel;
+    btInstalarCodecs: TbsSkinButton;
     bsRibbonDivider75: TbsRibbonDivider;
     bsRibbonGroup12: TbsRibbonGroup;
     btHinoSlideMusica: TbsSkinSpeedButton;
@@ -1711,6 +1717,7 @@ type
     procedure formataTexto(RichEdit: TbsSkinRichEdit);
     procedure FormResize(Sender: TObject);
     procedure tsBibliaShow(Sender: TObject);
+    procedure inicializaBiblia;
     function ExtraiTexto(const Str, Str1, Str2: string): string;
     procedure carregaParams();
     function GetComputerNameFunc: string;
@@ -1852,7 +1859,8 @@ type
     procedure bsSkinButton15Click(Sender: TObject);
     procedure DBGridDrawColumnCell(Sender: TObject; const Rect: TRect; DataCol: Integer; Column: TbsColumn; State: TGridDrawState);
     procedure AjustaLarguraCamposDBGrid(DBGrid: TbsSkinDbGrid);
-    procedure abrirArquivo(url: string;externo: Boolean = false);
+    procedure abrirArquivo(url: string;externo: Boolean = false;
+      sairSeInvalido: Boolean = false);
     procedure bsSkinSpeedButton46Click(Sender: TObject);
     procedure bsRibbon1Buttons3Click(Sender: TObject);
     procedure ExcluirTodas1Click(Sender: TObject);
@@ -1890,8 +1898,35 @@ type
     procedure abreVideoOn(videoID: string; videoTITULO: string = '');
     procedure abreLetraMusica(tipo: string;param: string;musicaID: Integer;audio: boolean = True);
     procedure abreLetraMusicaAlbum(albumID: Integer;musicaID: Integer = 0);
+
+    //Prepara um .slja/.lja para exibição: devolve o caminho do .lja pronto
+    //para ler e diz se o áudio deve tocar. O .slja é um zip, e precisa ser
+    //extraído antes.
+    function preparaArquivoSlides(arq: string; out audio: Boolean): string;
+
+    //Lê da seção [Geral] do pacote a faixa declarada e se ela deve tocar,
+    //sem extrair o pacote
+    function leGeralSlides(arq: string; out faixa: string): Boolean;
+
+    //Diz se o nome indica a versão playback, devolvendo nele o nome da música
+    function ehNomePlayback(var nome: string): Boolean;
+
+    //Diz se o pacote de slides traz música, sem extraí-lo
+    function slidesTemAudio(arq: string): Boolean;
+
+    //Deixa a faixa do pacote pronta para tocar sozinha e devolve o caminho
+    function extraiAudioSlides(arq: string): string;
+
+    //Abre um item de coletânea personalizada pelo botão correspondente
+    procedure abreSlidesArquivo(arq, arqPB: string; tag: Integer);
+
+    //Reproduz em sequência os slides de uma pasta de coletânea personalizada
+    procedure abreSlidesPasta(dir: string);
     procedure abreArquivoMusica(musicaID: Integer;album: string = '';url: string = '');
     procedure player(url: string;video: Boolean = true);
+    function mciErroDeCodec(erro: DWORD): Boolean;
+    function avisaCodecAusente: Boolean;
+    procedure btInstalarCodecsClick(Sender: TObject);
     procedure sbVideoOnAreaExtendidaChange(Sender: TObject);
     procedure ckVideoOnJanelaClick(Sender: TObject);
     procedure bsSkinSpeedButton60Click(Sender: TObject);
@@ -1982,13 +2017,14 @@ type
     procedure bsRibbon1Buttons5Click(Sender: TObject);
     procedure bsRibbon1Buttons0Click(Sender: TObject);
     procedure ckMusicaTituloSlideClick(Sender: TObject);
+    procedure ckMusicaNumeroHinoClick(Sender: TObject);
     procedure bsSkinButton38Click(Sender: TObject);
     procedure bsSkinButton36Click(Sender: TObject);
     procedure tabLetrasChange(Sender: TObject);
     procedure ckSlideTxtFormatPersoClick(Sender: TObject);
     procedure seSorteioTempoChange(Sender: TObject);
     function diretorio(dir:string):string;
-    procedure processaArquivo(arq: string);
+    procedure processaArquivo(arq: string; sairSeInvalido: Boolean = false);
     procedure ExportarMusicaClick(Sender: TObject);
     procedure miOpcExportar1Click(Sender: TObject);
     procedure exportarMusica(id:integer;audio:boolean;nome:string = '';param:string = '');
@@ -2050,6 +2086,7 @@ type
     procedure busBibliaVersiculoChange(Sender: TObject);
     function GetStrNumber(const S: string): string;
     function GetStrNumber2(const S: string): string;
+    function primeiroIntervaloNum(S: string): string;
     function geraIntervaloNum(S: string): string;
     function formataIntervaloNum(S: string): string;
     function maiorLista(L: string): string;
@@ -2287,6 +2324,12 @@ uses
   fmCopiaLiturgiaDia, uInstanciaUnica;
 
 {$R *.dfm}
+
+const
+  //Página de download do codec pack que o player interno (MCI) exige para
+  //vídeo. Aponta para a página, não para o instalador: o nome do arquivo muda
+  //a cada versão lançada.
+  URL_CODECS = 'https://codecguide.com/download_k-lite_codec_pack_full.htm';
 
 
 Function TfmIndex.VersaoExe: String;
@@ -3552,7 +3595,8 @@ begin
   DM.tmrPlayer.Enabled := True;
 end;
 
-procedure TfmIndex.abrirArquivo(url: string;externo: Boolean);
+procedure TfmIndex.abrirArquivo(url: string;externo: Boolean;
+  sairSeInvalido: Boolean);
 var
   ext: string;
 begin
@@ -3563,7 +3607,7 @@ begin
     if externo
       then ShellExecute(handle, nil, PChar(url), nil, nil, SW_MAXIMIZE)
     else if (ext = '.slja') or (ext = '.lja')
-      then processaArquivo(url)
+      then processaArquivo(url, sairSeInvalido)
     else if (ckPlayerAudio.Checked)
       and ((ext = '.mp3') or (ext = '.wma') or (ext = '.wav')) then
     begin
@@ -4774,7 +4818,9 @@ begin
     and (Message.Msg = WM_LOUVORJA_ABRE_ARQUIVO)
     and (Trim(arquivo_recebido) <> '') then
   begin
-    //Mesmo caminho usado pelos itens da liturgia
+    //Mesmo caminho usado pelos itens da liturgia. O programa já estava aberto
+    //quando o arquivo chegou, então um arquivo inválido apenas avisa: encerrar
+    //aqui derrubaria a sessão que o usuário já tinha em andamento
     abrirArquivo(arquivo_recebido);
     arquivo_recebido := '';
     Exit;
@@ -5440,7 +5486,7 @@ begin
     corCampoBusca(TFDQuery(DM.qrBIBLIA_VERSICULOS),busBibliaVersiculo,nil);
 
     if (not (DM.qrBIBLIA_LIVROS.Eof)) and (trim(loadCol.Strings.Values['BIBLIA_VERSICULO']) <> '') then
-      DM.qrBIBLIA_VERSICULOS.Locate('VERSICULO',loadCol.Strings.Values['BIBLIA_VERSICULO'],[]);
+      DM.qrBIBLIA_VERSICULOS.Locate('VERSICULO',primeiroIntervaloNum(loadCol.Strings.Values['BIBLIA_VERSICULO']),[]);
 
   end
   else if (tipo = 'BUS') then
@@ -8715,6 +8761,69 @@ begin
   if btplPlay.Down then MediaPlayer1.Play;
 end;
 
+{
+  Classifica o código que o MediaPlayer1.Error guarda depois de um Open que
+  falhou. Lista de exclusão, e não de inclusão: qualquer falha ao abrir um
+  arquivo que existe significa que o player interno não dá conta dele, e na
+  prática isso é falta de codec. Inclusive o MCIERR_INTERNAL (277), que é o que
+  o MPEGVideo devolve quando não consegue montar o grafo de decodificação.
+
+  Comparação um a um: os MCIERR_ passam de 255 e não cabem em conjunto Delphi
+}
+function TfmIndex.mciErroDeCodec(erro: DWORD): Boolean;
+begin
+  Result := (erro <> 0) and
+            (erro <> MCIERR_FILE_NOT_FOUND) and
+            (erro <> MCIERR_INVALID_FILE) and
+            (erro <> MCIERR_OUT_OF_MEMORY);
+end;
+
+{
+  O player interno usa MCI, que depende dos codecs instalados no Windows. Sem
+  eles a mensagem do sistema ("Problema ao inicializar o MCI") não diz ao
+  operador o que fazer. Retorna True se ele optou por ver as instruções.
+
+  Cada Translate recebe uma linha só: o arquivo de idioma é nome=valor, e uma
+  quebra de linha dentro da chave o corromperia.
+}
+function TfmIndex.avisaCodecAusente: Boolean;
+var
+  td: TTaskDialog;
+  btSim, btPadrao: TTaskDialogButtonItem;
+begin
+  td := TTaskDialog.Create(nil);
+  try
+    td.Caption := TITULO;
+    td.MainIcon := tdiWarning;
+    td.Title := fIniciando.Translate('Não é possível executar este vídeo no player do programa: falta o codec necessário.');
+    td.Text := fIniciando.Translate('Deseja abrir a página de download do K-Lite Codec Pack Full agora?');
+    //Sem os botões padrão: os dois abaixo são os únicos caminhos
+    td.CommonButtons := [];
+
+    btSim := td.Buttons.Add as TTaskDialogButtonItem;
+    btSim.Caption := fIniciando.Translate('Sim');
+    btSim.ModalResult := mrYes;
+
+    btPadrao := td.Buttons.Add as TTaskDialogButtonItem;
+    btPadrao.Caption := fIniciando.Translate('Executar no player padrão');
+    btPadrao.ModalResult := mrNo;
+
+    td.Execute;
+    //Qualquer coisa diferente de Sim cai no player padrão, que é o seguro
+    Result := (td.ModalResult = mrYes);
+  finally
+    td.Free;
+  end;
+
+  if Result then
+    ShellExecute(handle, nil, PChar(URL_CODECS), nil, nil, SW_MAXIMIZE);
+end;
+
+procedure TfmIndex.btInstalarCodecsClick(Sender: TObject);
+begin
+  ShellExecute(handle, nil, PChar(URL_CODECS), nil, nil, SW_MAXIMIZE);
+end;
+
 procedure TfmIndex.player(url: string;video: Boolean);
 var
   monitor: integer;
@@ -8736,6 +8845,8 @@ begin
       fPlayer.BorderStyle := bsNone
     else
       fPlayer.BorderStyle := bsSizeable;
+    //Nasce invisível e só aparece depois que o Open der certo: falhando, o
+    //operador não chega a ver a tela cheia preta piscar antes do aviso
     fPlayer.AlphaBlend := True;
     fPlayer.AlphaBlendValue := 0;
     fPlayer.Show;
@@ -8761,6 +8872,21 @@ begin
     if (fPlayer <> nil) then
       fPlayer.ajustaProporcao;
     MediaPlayer1.Play;
+
+    //Só agora a janela aparece, já com o vídeo montado
+    if (video) and (fPlayer <> nil) then
+    begin
+      if ckFadeForm.Checked then
+      begin
+        for i := 0 to 255 do
+        begin
+          fPlayer.AlphaBlendValue := i;
+          sleep(1);
+        end;
+      end
+      else fPlayer.AlphaBlendValue := 255;
+    end;
+
     btplPlay.Down := True;
     btplPause.Down := False;
     pbPlayer.MaxValue := MediaPlayer1.Length;
@@ -8771,9 +8897,29 @@ begin
   except
     on E: Exception do
     begin
-      Application.MessageBox(PChar('Ocorreu um erro ao executar arquivo: '+E.Message+#13#10+'Pressione Ok para abrir o arquivo!'),TITULO,mb_ok+mb_iconerror);
-      abrirArquivo(url,true);
+      //MediaPlayer1.Error guarda o código MCI bruto do Open que falhou (a
+      //exceção só traz o texto já formatado). Lido antes de fechar, que é
+      //quem poderia sobrescrever
+      erro := DWORD(MediaPlayer1.Error);
+      gravaLog('Falha no player interno ('+IntToStr(erro)+'): '+E.ClassName+': '+E.Message);
+
+      //Fecha antes do diálogo: com um monitor só, a janela do player está em
+      //tela cheia e a caixa de mensagem ficaria atrás dela
       btplFecharClick(nil);
+
+      if (E is EMCIDeviceError) and mciErroDeCodec(erro) then
+      begin
+        if not avisaCodecAusente then
+          abrirArquivo(url,true);
+      end
+      else
+      begin
+        Application.MessageBox(PChar(
+          fIniciando.Translate('Ocorreu um erro ao executar arquivo:')+' '+E.Message+#13#10+
+          fIniciando.Translate('Pressione Ok para abrir o arquivo!')),
+          TITULO,mb_ok+mb_iconerror);
+        abrirArquivo(url,true);
+      end;
     end;
   end;
 end;
@@ -9089,11 +9235,10 @@ begin
     Exit;
   end;
 
-  try
+  //Stop exige o device aberto; sem a guarda ele levanta EMCIDeviceError sempre
+  //que o Open falhou antes, o que polui o depurador a cada erro de codec
+  if (MediaPlayer1.DeviceID <> 0) then
     MediaPlayer1.Stop;
-  except
-    //
-  end;
   MediaPlayer1.Close;
   MediaPlayer1.FileName := '';
 
@@ -10548,7 +10693,11 @@ end;
 procedure TfmIndex.rbDirecaoClick(Sender: TObject);
 begin
   txtDecr.Enabled := (rbDirecao.ItemIndex = 1);
-  if txtDecr.Enabled then
+
+  //CanFocus cobre página ainda não exibida: focar controle invisível levanta
+  //exceção, e este handler é chamado por carregaConfiguracoes antes de a
+  //aba do cronômetro aparecer alguma vez
+  if txtDecr.Enabled and txtDecr.CanFocus then
     txtDecr.Setfocus;
 
   //Só zera quando a direção foi trocada pelo usuário, não durante a carga das
@@ -10684,6 +10833,14 @@ begin
     gravaParam('Musicas', 'TituloSlide', '1')
   else
     gravaParam('Musicas', 'TituloSlide', '0');
+end;
+
+procedure TfmIndex.ckMusicaNumeroHinoClick(Sender: TObject);
+begin
+  if ckMusicaNumeroHino.Checked then
+    gravaParam('Musicas', 'NumeroHino', '1')
+  else
+    gravaParam('Musicas', 'NumeroHino', '0');
 end;
 
 procedure TfmIndex.ckMusicaTopoClick(Sender: TObject);
@@ -11462,7 +11619,7 @@ begin
     begin
       if (Sender <> nil) then
         application.MessageBox('Coloque o número para ser adicionado!', TITULO, mb_ok + mb_iconexclamation);
-      opSort_Ini.SetFocus;
+      if opSort_Ini.CanFocus then opSort_Ini.SetFocus;
       Exit;
     end;
     opSort_Ini.text := opSort_Fin.text;
@@ -11515,7 +11672,7 @@ begin
   opSort_Ini.text := '';
   opSort_Fin.text := '';
   SorteioContador();
-  opSort_Ini.SetFocus;
+  if opSort_Ini.CanFocus then opSort_Ini.SetFocus;
 end;
 
 procedure TfmIndex.btAddSorteioNMClick(Sender: TObject);
@@ -11531,7 +11688,7 @@ begin
   begin
     if (Sender <> nil) then
       application.MessageBox('Digite o nome para ser adicionado!', TITULO, mb_ok + mb_iconexclamation);
-    opSort_Nm.SetFocus;
+    if opSort_Nm.CanFocus then opSort_Nm.SetFocus;
     Exit;
   end;
 
@@ -11563,7 +11720,7 @@ begin
 
   opSort_NM.text := '';
   SorteioContador();
-  opSort_NM.SetFocus;
+  if opSort_NM.CanFocus then opSort_NM.SetFocus;
 end;
 
 procedure TfmIndex.btfsBoldClick(Sender: TObject);
@@ -12459,7 +12616,7 @@ begin
     if fMonitorSorteio <> nil then
       fMonitorSorteio.lmdSorteio.Caption := lmdSorteio.Caption;
     application.messagebox('Não há itens disponíveis para serem sorteados!', TITULO, mb_ok + mb_iconexclamation);
-    opSort_Ini.SetFocus;
+    if opSort_Ini.CanFocus then opSort_Ini.SetFocus;
     exit;
   end;
 
@@ -12804,6 +12961,16 @@ begin
   end;
 end;
 
+function TfmIndex.primeiroIntervaloNum(S: string): string;
+var
+  p: Integer;
+begin
+  Result := Trim(S);
+  p := Pos(',', Result);
+  if (p > 0) then
+    Result := Trim(Copy(Result, 1, p-1));
+end;
+
 function TfmIndex.geraIntervaloNum(S: string): string;
 var
   str: TStringList;
@@ -12840,10 +13007,8 @@ begin
   result := S;
 end;
 
-procedure TfmIndex.tsBibliaShow(Sender: TObject);
+procedure TfmIndex.inicializaBiblia;
 begin
-  PaginaMenuAtiva(bsConfBiblia,tsBiblia);
-  marcaAbaAberta(tsBiblia);
   if (loadCol.Strings.Values['BIBLIA_F'] <> 'okf') then
   begin
     lmdBibliaTxt.Caption := '';
@@ -12934,6 +13099,13 @@ begin
     carregaConfiguracoes('BIBLIA');
   end;
 
+end;
+
+procedure TfmIndex.tsBibliaShow(Sender: TObject);
+begin
+  PaginaMenuAtiva(bsConfBiblia,tsBiblia);
+  marcaAbaAberta(tsBiblia);
+  inicializaBiblia;
 end;
 
 procedure TfmIndex.miOpcExportar1Click(Sender: TObject);
@@ -13457,41 +13629,403 @@ begin
   SorteioContador;
 end;
 
-procedure TfmIndex.processaArquivo(arq: string);
+{
+  Diz se um pacote de slides toca música, sem extraí-lo.
+
+  São duas condições, e as duas precisam valer: o pacote declarar uma faixa em
+  [Geral] url_musica, e estar configurado para tocá-la em [Geral] audio. Um
+  pacote com música desligada se comporta como se fosse só letra - nada toca,
+  e a reprodução em sequência pararia nele -, então para efeito de menu ele
+  não tem áudio.
+
+  Num .slja essas chaves estão dentro do zip, e extrair o pacote inteiro só
+  para lê-las sairia caro: um .slja com áudio passa de 4 MB, e a lista precisa
+  consultar todos os itens da pasta ao ser montada. Lendo apenas a entrada
+  slides.lja a consulta fica em menos de um milissegundo por arquivo, contra
+  dezenas se fosse pela extração.
+}
+function TfmIndex.leGeralSlides(arq: string; out faixa: string): Boolean;
+var
+  ext, linha, toca: string;
+  ZipFile: TZipFile;
+  bytes: TBytes;
+  texto: TStringList;
+  i: Integer;
+  emGeral: Boolean;
+begin
+  Result := False;
+  faixa := '';
+  ext := LowerCase(ExtractFileExt(arq));
+
+  if (ext = '.lja') then
+  begin
+    faixa := Trim(lerParam('Geral', 'url_musica', '',
+      ExtractFileName(arq), ExtractFilePath(arq)));
+    toca := Trim(lerParam('Geral', 'audio', '1',
+      ExtractFileName(arq), ExtractFilePath(arq)));
+    Result := (toca = '1');
+    Exit;
+  end;
+
+  if (ext <> '.slja') then
+    Exit;
+
+  texto := TStringList.Create;
+  try
+    ZipFile := TZipFile.Create;
+    try
+      try
+        ZipFile.Open(arq, zmRead);
+        //Só a entrada dos slides, direto para a memória
+        ZipFile.Read('slides.lja', bytes);
+        ZipFile.Close;
+      except
+        Exit;
+      end;
+    finally
+      ZipFile.Free;
+    end;
+
+    if (Length(bytes) = 0) then
+      Exit;
+
+    texto.Text := TEncoding.ANSI.GetString(bytes);
+
+    //Ausente, o audio vale como ligado - é o mesmo padrão que o programa usa
+    //ao abrir o arquivo
+    toca := '1';
+
+    emGeral := False;
+    for i := 0 to texto.Count - 1 do
+    begin
+      linha := Trim(texto[i]);
+
+      if (linha <> '') and (linha[1] = '[') then
+      begin
+        //Depois da seção [Geral] não há mais o que ler
+        if emGeral then
+          Break;
+        emGeral := SameText(linha, '[Geral]');
+        Continue;
+      end;
+
+      if not emGeral then
+        Continue;
+
+      if SameText(Copy(linha, 1, 11), 'url_musica=') then
+        faixa := Trim(Copy(linha, 12, MaxInt))
+      else if SameText(Copy(linha, 1, 6), 'audio=') then
+        toca := Trim(Copy(linha, 7, MaxInt));
+    end;
+
+    Result := (toca = '1');
+  finally
+    texto.Free;
+  end;
+end;
+
+{
+  Diz se o nome do arquivo indica a versão playback e, em caso afirmativo,
+  devolve nele o nome da música sem o sufixo.
+
+  O sufixo é uma convenção digitada à mão, então o espaço em volta do traço é
+  tolerado: "-PB", " -PB", "- PB" e " - PB" valem todos. O nome volta aparado
+  para que o playback caia sempre na mesma chave do cantado.
+}
+function TfmIndex.ehNomePlayback(var nome: string): Boolean;
+var
+  s: string;
+begin
+  Result := False;
+
+  s := TrimRight(nome);
+  if (Length(s) < 3) or not SameText(Copy(s, Length(s) - 1, 2), 'PB') then
+    Exit;
+
+  s := TrimRight(Copy(s, 1, Length(s) - 2));
+  if (s = '') or (s[Length(s)] <> '-') then
+    Exit;
+
+  //Sem nada antes do traço não há música a que este playback pertença
+  s := Trim(Copy(s, 1, Length(s) - 1));
+  if (s = '') then
+    Exit;
+
+  nome := s;
+  Result := True;
+end;
+
+function TfmIndex.slidesTemAudio(arq: string): Boolean;
+var
+  faixa: string;
+begin
+  //Sem faixa declarada, ou com o áudio desligado, o pacote é só de letras
+  Result := leGeralSlides(arq, faixa) and (faixa <> '');
+end;
+
+{
+  Deixa a faixa de áudio de um pacote de slides pronta para tocar sozinha,
+  sem abrir os slides, e devolve o caminho dela.
+
+  No .lja a faixa é um arquivo ao lado; no .slja ela está dentro do pacote e
+  precisa ser extraída para a pasta temporária, que o programa limpa ao fechar.
+}
+function TfmIndex.extraiAudioSlides(arq: string): string;
+var
+  faixa, dir_t: string;
+  ZipFile: TZipFile;
+begin
+  Result := '';
+
+  if not leGeralSlides(arq, faixa) or (faixa = '') then
+    Exit;
+
+  if (LowerCase(ExtractFileExt(arq)) = '.lja') then
+  begin
+    faixa := ExtractFilePath(arq) + faixa;
+    if FileExists(faixa) then
+      Result := faixa;
+    Exit;
+  end;
+
+  dir_t := dir_temp+'~audio_'+FormatDateTime('yyyymmddHHMMSSZZZ', now());
+
+  ZipFile := TZipFile.Create;
+  try
+    try
+      ZipFile.Open(arq, zmRead);
+      //Só a faixa sai do pacote: os slides não interessam aqui
+      if (ZipFile.IndexOf(faixa) < 0) then
+        Exit;
+      ZipFile.Extract(faixa, dir_t);
+      ZipFile.Close;
+    except
+      Exit;
+    end;
+  finally
+    ZipFile.Free;
+  end;
+
+  faixa := IncludeTrailingPathDelimiter(dir_t)+faixa;
+  if FileExists(faixa) then
+    Result := faixa;
+end;
+
+{
+  Abre um item de coletânea personalizada pelo botão correspondente.
+
+  As tags são as mesmas dos botões das coletâneas do programa:
+  1 slides cantado, 2 slides playback, 3 slides sem áudio,
+  4 somente áudio cantado, 5 somente áudio playback.
+}
+procedure TfmIndex.abreSlidesArquivo(arq, arqPB: string; tag: Integer);
+var
+  alvo, pronto: string;
+  audio: Boolean;
+begin
+  if (tag = 2) or (tag = 5)
+    then alvo := arqPB
+    else alvo := arq;
+
+  if (alvo = '') then
+  begin
+    application.MessageBox(PChar('Esta música não possui playback!'), titulo, mb_ok + MB_ICONEXCLAMATION);
+    Exit;
+  end;
+
+  if (tag = 4) or (tag = 5) then
+  begin
+    alvo := extraiAudioSlides(alvo);
+    if (alvo = '') then
+      application.MessageBox(PChar('Não foi possível abrir o áudio desta música!'), titulo, mb_ok + mb_iconerror)
+    else
+      abrirArquivo(alvo);
+    Exit;
+  end;
+
+  pronto := preparaArquivoSlides(alvo, audio);
+  if (pronto = '') then
+  begin
+    application.MessageBox(PChar('Arquivo "'+alvo+'" inválido!'), titulo, mb_ok + mb_iconerror);
+    Exit;
+  end;
+
+  //O botão "sem áudio" mostra os mesmos slides, só que sem tocar a faixa
+  if (tag = 3) then
+    audio := False;
+
+  abreLetraMusica('EXT', pronto, -1, audio);
+end;
+
+{
+  Deixa um .slja ou .lja pronto para ser exibido.
+
+  Extraído de processaArquivo para poder ser reaproveitado ao encadear os
+  arquivos de uma coletânea personalizada, sem repetir a regra do zip nem a
+  leitura do parâmetro de áudio.
+
+  Devolve vazio quando a extensão não é de slides.
+}
+function TfmIndex.preparaArquivoSlides(arq: string; out audio: Boolean): string;
 var
   ext: string;
-  audio: Boolean;
   ZipFile: TZipFile;
   dir_t: string;
 begin
-  ext := (ExtractFileExt(arq));
+  Result := '';
+  audio := True;
+
+  ext := LowerCase(ExtractFileExt(arq));
+
   if (ext = '.slja') then
   begin
+    //O .slja é um zip: os slides estão em slides.lja dentro dele
     ZipFile := TZipFile.Create;
     try
       dir_t := dir_temp+'~read_'+FormatDateTime('yyyymmddHHMMSSZZZ', now());
-      ZipFile.Open(arq, zmRead);
-      ZipFile.ExtractAll(dir_t);
-      ZipFile.Close;
+      try
+        ZipFile.Open(arq, zmRead);
+        ZipFile.ExtractAll(dir_t);
+        ZipFile.Close;
+      except
+        //Pacote corrompido: para quem chamou vale como arquivo invalido
+        Exit;
+      end;
       arq := dir_t+'\slides.lja';
     finally
       ZipFile.Free;
     end;
-    audio := (lerParam('Geral', 'audio', '1', ExtractFileName(arq), ExtractFilePath(arq)) = '1');
-    abreLetraMusica('EXT',arq,-1,audio);
+
+    //Um zip que abre mas nao traz os slides tambem nao serve. Sem esta
+    //conferencia o caminho inexistente seguia adiante e quebrava mais na frente
+    if not FileExists(arq) then
+      Exit;
   end
-  else
-  if (ext = '.lja') then
-  begin
-    audio := (lerParam('Geral', 'audio', '1', ExtractFileName(arq), ExtractFilePath(arq)) = '1');
-    abreLetraMusica('EXT',arq,-1,audio);
-  end
+  else if (ext <> '.lja') then
+    Exit
+  else if not FileExists(arq) then
+    Exit;
+
+  audio := (lerParam('Geral', 'audio', '1', ExtractFileName(arq), ExtractFilePath(arq)) = '1');
+  Result := arq;
+end;
+
+{
+  Reproduz em sequência os slides de uma coletânea personalizada.
+
+  A coletânea personalizada é uma pasta, não um álbum do banco, então não há
+  ID_ALBUM nem a consulta que o fmMusica usa para encadear. Aqui a fila é a
+  própria lista de arquivos, guardada no fmMusica, que avança quando os slides
+  de um arquivo terminam.
+
+  Só entram .slja e .lja: a tela só oferece esta opção quando a pasta inteira
+  é de slides, então qualquer outra coisa aqui seria engano.
+}
+procedure TfmIndex.abreSlidesPasta(dir: string);
+var
+  ordem, dados, arquivos: TStringList;
+  sr: TSearchRec;
+  ret, i: Integer;
+  ext, nome, chave, primeiro: string;
+  ehPB, audio: Boolean;
+begin
+  dir := IncludeTrailingPathDelimiter(dir);
+  if not DirectoryExists(dir) then
+    Exit;
+
+  //Uma entrada por música, como na lista da tela: a chave ordena e o objeto
+  //guarda o que foi achado para ela  --  [0] cantado  [1] playback
+  ordem := TStringList.Create;
+  arquivos := TStringList.Create;
+  try
+    ret := FindFirst(dir + '*.*', faAnyFile, sr);
+    try
+      while (ret = 0) do
+      begin
+        if (sr.Name <> '.') and (sr.Name <> '..') and (sr.Attr <> faDirectory) then
+        begin
+          ext := LowerCase(ExtractFileExt(sr.Name));
+
+          if (ext = '.slja') or (ext = '.lja') then
+          begin
+            nome := Trim(ChangeFileExt(sr.Name, ''));
+            ehPB := ehNomePlayback(nome);
+            chave := LowerCase(nome);
+
+            i := ordem.IndexOf(chave);
+            if (i < 0) then
+            begin
+              dados := TStringList.Create;
+              dados.Add('');
+              dados.Add('');
+              i := ordem.AddObject(chave, dados);
+            end;
+
+            dados := TStringList(ordem.Objects[i]);
+            if ehPB
+              then dados[1] := dir + sr.Name
+              else dados[0] := dir + sr.Name;
+          end;
+        end;
+        ret := FindNext(sr);
+      end;
+    finally
+      FindClose(sr);
+    end;
+
+    //Mesma ordem que a lista da tela apresenta
+    ordem.Sort;
+
+    for i := 0 to ordem.Count - 1 do
+    begin
+      dados := TStringList(ordem.Objects[i]);
+      //A cantada sempre se sobressai; o playback entra quando ela não existe
+      if (dados[0] <> '')
+        then arquivos.Add(dados[0])
+        else arquivos.Add(dados[1]);
+    end;
+
+    if (arquivos.Count = 0) then
+      Exit;
+
+    primeiro := preparaArquivoSlides(arquivos[0], audio);
+    if (primeiro = '') then
+    begin
+      application.MessageBox(PChar('Arquivo "'+arquivos[0]+'" inválido!'), titulo, mb_ok + mb_iconerror);
+      Exit;
+    end;
+
+    abreLetraMusica('EXT', primeiro, -1, audio);
+
+    //Depois de aberto: o fmMusica passa a ser dono da fila
+    if (fMusica <> nil) then
+      fMusica.defineFila(arquivos, 0);
+  finally
+    for i := 0 to ordem.Count - 1 do
+      ordem.Objects[i].Free;
+    ordem.Free;
+    arquivos.Free;
+  end;
+end;
+
+procedure TfmIndex.processaArquivo(arq: string; sairSeInvalido: Boolean);
+var
+  audio: Boolean;
+  pronto: string;
+begin
+  pronto := preparaArquivoSlides(arq, audio);
+
+  if (pronto <> '') then
+    abreLetraMusica('EXT',pronto,-1,audio)
   else
   begin
     Application.MessageBox(PChar('Arquivo "'+arq+'" inválido!'),TITULO,mb_ok+mb_iconerror);
-    DM.tmrSair.Enabled := True;
+
+    //Só encerra quando o programa foi acionado de fora para abrir este
+    //arquivo; aberto de dentro, um arquivo ruim não pode derrubar a sessão
+    if sairSeInvalido then
+      DM.tmrSair.Enabled := True;
   end;
-//  showmessage(ext);
 end;
 
 procedure TfmIndex.RichEdit1Exit(Sender: TObject);
@@ -15680,7 +16214,7 @@ begin
 
 
   DBCtrlGridBibliaVersiculo.Refresh;
-  DBCtrlGridBibliaVersiculoPaintPanel(DBCtrlGridBibliaVersiculo,StrToInt('0'+loadCol.Strings.Values['BIBLIA_VERSICULO']),nil,Rect(1, 1, DBCtrlGridBibliaVersiculo.PanelWidth-2, DBCtrlGridBibliaVersiculo.PanelHeight-2));
+  DBCtrlGridBibliaVersiculoPaintPanel(DBCtrlGridBibliaVersiculo,StrToInt('0'+primeiroIntervaloNum(loadCol.Strings.Values['BIBLIA_VERSICULO'])),nil,Rect(1, 1, DBCtrlGridBibliaVersiculo.PanelWidth-2, DBCtrlGridBibliaVersiculo.PanelHeight-2));
 end;
 
 procedure TfmIndex.DBCtrlGridBibliaVersiculoPaintPanel(

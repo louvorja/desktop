@@ -44,6 +44,8 @@ type
     procedure FormActivate(Sender: TObject);
     procedure acaoSlide(acao:string; setPosicao: Boolean = True; ac_album: Boolean = True);
     procedure acaoAlbum(acao:string);
+    procedure acaoArquivo(acao:string);
+    procedure defineFila(lista: TStringList; indice: Integer);
     procedure irSlide(num: integer);
     procedure slide(setPosicao: Boolean = True);
     procedure btGravaRClick(Sender: TObject);
@@ -90,6 +92,10 @@ type
     { Public declarations }
     musicaID,albumID: Integer;
     inicio: Boolean;
+    //Fila de arquivos de slides de uma coletânea personalizada. Vazia
+    //quando a exibição veio de album ou de arquivo avulso.
+    filaArquivos: TStringList;
+    filaIndice: Integer;
     audio: Boolean;
     fecharSlides,fecharSlidesRetorno: Boolean;
     tipo,param: string;
@@ -128,6 +134,59 @@ begin
   carregaMusica;
 end;
 
+{
+  Assume a fila de arquivos de uma coletânea personalizada.
+
+  A lista é copiada: quem chamou a libera logo em seguida.
+}
+procedure TfMusica.defineFila(lista: TStringList; indice: Integer);
+begin
+  if (filaArquivos = nil) then
+    filaArquivos := TStringList.Create;
+
+  filaArquivos.Assign(lista);
+  filaIndice := indice;
+end;
+
+{
+  Troca de arquivo dentro da fila, como acaoálbum faz dentro do álbum.
+
+  O .slja precisa ser extraído a cada troca, e o parâmetro de áudio vale por
+  arquivo - por isso passa de novo por preparaArquivoSlides.
+}
+procedure TfMusica.acaoArquivo(acao: string);
+var
+  pronto: string;
+  temAudio: Boolean;
+begin
+  if (filaArquivos = nil) then
+    Exit;
+
+  //Um arquivo invalido nao pode parar a fila: segue procurando no mesmo sentido
+  repeat
+    if (acao = 'prox') and (filaIndice < filaArquivos.Count - 1) then
+      Inc(filaIndice)
+    else if (acao = 'ant') and (filaIndice > 0) then
+      Dec(filaIndice)
+    else
+      Exit;
+
+    pronto := fmIndex.preparaArquivoSlides(filaArquivos[filaIndice], temAudio);
+  until (pronto <> '');
+
+  if (audio) then
+  begin
+    BASS_MusicFree(bass_musica);
+    BASS_Free();
+  end;
+
+  uslide := -1;
+  tipo := 'EXT';
+  param := pronto;
+  audio := temAudio;
+  carregaMusica;
+end;
+
 procedure TfMusica.acaoSlide(acao: string;setPosicao: Boolean; ac_album: Boolean);
 var
   tempo,rec: integer;
@@ -143,6 +202,11 @@ begin
       acaoAlbum('ant');
       exit;
     end
+    else if (ac_album = true) and (filaArquivos <> nil) and (filaIndice > 0) then
+    begin
+      acaoArquivo('ant');
+      exit;
+    end
     else uslide := -1;
 //    else setPosicao := false;
   end;
@@ -153,6 +217,12 @@ begin
     if (ac_album = true) and (albumID > 0) and (DM.qrSLIDE_MUSICA_ALBUM.RecNo < DM.qrSLIDE_MUSICA_ALBUM.RecordCount) then
     begin
       acaoAlbum('prox');
+      exit;
+    end
+    else if (ac_album = true) and (filaArquivos <> nil) and
+            (filaIndice < filaArquivos.Count - 1) then
+    begin
+      acaoArquivo('prox');
       exit;
     end
     else setPosicao := false;
@@ -596,6 +666,9 @@ end;
 procedure TfMusica.carregaSlides;
 var
   i: integer;
+  numHino: string;
+  capaNum: boolean;
+  tamTitulo: integer;
   tempo: string;
   info: string;
   aimg,uimg: string;
@@ -624,6 +697,25 @@ begin
     DM.qrSLIDE_MUSICA.ParamByName('MUSICA_ID').Value := musicaID;
     DM.qrSLIDE_MUSICA.Open;
 
+    //O numero so existe para o Hinario Adventista; consultar a tabela dele ja
+    //deixa de fora o Hinario 1996 e qualquer outra colecao
+    numHino := '';
+    if (musicaID > 0) and (fmIndex.ckMusicaNumeroHino.Checked) then
+    begin
+      try
+        DM.qrHINO_NUMERO.Close;
+        DM.qrHINO_NUMERO.ParamByName('ID').Value := musicaID;
+        DM.qrHINO_NUMERO.Open;
+        if not DM.qrHINO_NUMERO.IsEmpty then
+          numHino := Trim(DM.qrHINO_NUMERO.FieldByName('FAIXA').AsString);
+        if (numHino <> '') then
+          numHino := 'Hino ' + numHino;
+        DM.qrHINO_NUMERO.Close;
+      except
+        numHino := '';
+      end;
+    end;
+
     while not DM.qrSLIDE_MUSICA.eof do
     begin
       if (DM.qrSLIDE_MUSICA.RecNo <= 1) and (param = 'PB') and (DM.qrSLIDE_MUSICA.FieldByName('URL_MUSICA_PB').AsString = '') then
@@ -649,7 +741,16 @@ begin
         else DM.cdsSLIDE_MUSICA.FieldByName('URL_MUSICA').Value := DM.qrSLIDE_MUSICA.FieldByName('URL_MUSICA').AsString;
       DM.cdsSLIDE_MUSICA.FieldByName('LETRA_UCASE').Value := Ansiuppercase(DM.qrSLIDE_MUSICA.FieldByName('LETRA_UCASE').AsString);
       lbLetras.Items.Add(Ansiuppercase(DM.qrSLIDE_MUSICA.FieldByName('LETRA_UCASE').AsString));
-      DM.cdsSLIDE_MUSICA.FieldByName('LETRA_AUX').Value := DM.qrSLIDE_MUSICA.FieldByName('LETRA_AUX').AsString;
+      //Numero do hino sobre o titulo. Vai no texto auxiliar, que a transmissao
+      //nao envia (so o lblLetra segue para o servidor), entao nao interfere nela.
+      //Nao sobrescreve um auxiliar que a musica ja tenha.
+      capaNum := (numHino <> '') and
+                 (DM.qrSLIDE_MUSICA.FieldByName('TIPO').AsString = 'CAPA') and
+                 (Trim(DM.qrSLIDE_MUSICA.FieldByName('LETRA_AUX').AsString) = '');
+      if capaNum then
+        DM.cdsSLIDE_MUSICA.FieldByName('LETRA_AUX').Value := numHino
+      else
+        DM.cdsSLIDE_MUSICA.FieldByName('LETRA_AUX').Value := DM.qrSLIDE_MUSICA.FieldByName('LETRA_AUX').AsString;
       DM.cdsSLIDE_MUSICA.FieldByName('ORDEM').Value := DM.qrSLIDE_MUSICA.FieldByName('ORDEM').AsInteger;
       if (param = 'PB')
         then DM.cdsSLIDE_MUSICA.FieldByName('TEMPO').Value := DM.qrSLIDE_MUSICA.FieldByName('TEMPO_PB').AsString
@@ -696,6 +797,19 @@ begin
         DM.cdsSLIDE_MUSICA.FieldByName('COR_LETRA').Value := DM.qrSLIDE_MUSICA.FieldByName('COR_LETRA').AsString;
         DM.cdsSLIDE_MUSICA.FieldByName('TAMANHO_LETRA_AUX').Value := DM.qrSLIDE_MUSICA.FieldByName('TAMANHO_LETRA_AUX').AsInteger;
         DM.cdsSLIDE_MUSICA.FieldByName('COR_LETRA_AUX').Value := DM.qrSLIDE_MUSICA.FieldByName('COR_LETRA_AUX').AsString;
+      end;
+
+      //O numero do hino fica com metade da altura do titulo. Calculado a partir
+      //do tamanho que este slide vai usar, para acompanhar se o titulo mudar
+      if capaNum then
+      begin
+        tamTitulo := DM.cdsSLIDE_MUSICA.FieldByName('TAMANHO_LETRA').AsInteger;
+        //Mesmo padrao que o acaoSlide adota na capa quando nada foi definido
+        if (tamTitulo <= 0) then
+          tamTitulo := 18;
+        if (tamTitulo < 2) then
+          tamTitulo := 2;
+        DM.cdsSLIDE_MUSICA.FieldByName('TAMANHO_LETRA_AUX').Value := tamTitulo div 2;
       end;
       if fmIndex.ckSlideImgFormatPerso.Checked then
       begin
@@ -984,6 +1098,10 @@ end;
 
 procedure TfMusica.FormClose(Sender: TObject; var Action: TCloseAction);
 begin
+  //A fila só vale para esta exibição: some junto com a janela
+  FreeAndNil(filaArquivos);
+  filaIndice := 0;
+
   if (fTransmitir.btServidor.ImageIndex <> 8) then
   begin
      fmIndex.gravaParamServer('MUSICA', 'letra', '');
@@ -1444,9 +1562,14 @@ begin
     tmrTempo.Enabled := False;
     if not (pause) then
     begin
-      if (albumID > 0) and (DM.qrSLIDE_MUSICA_ALBUM.RecNo < DM.qrSLIDE_MUSICA_ALBUM.RecordCount)
-        then acaoAlbum('prox')
-        else close;
+      //Fim do audio: encadeia a proxima musica da fila. Album vem do banco;
+      //coletanea personalizada vem da lista de arquivos montada pelo fmIndex
+      if (albumID > 0) and (DM.qrSLIDE_MUSICA_ALBUM.RecNo < DM.qrSLIDE_MUSICA_ALBUM.RecordCount) then
+        acaoAlbum('prox')
+      else if (filaArquivos <> nil) and (filaIndice < filaArquivos.Count - 1) then
+        acaoArquivo('prox')
+      else
+        close;
     end;
   end;
 
