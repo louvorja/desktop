@@ -2073,6 +2073,7 @@ type
     procedure busBibliaVersiculoChange(Sender: TObject);
     function GetStrNumber(const S: string): string;
     function GetStrNumber2(const S: string): string;
+    function primeiroIntervaloNum(S: string): string;
     function geraIntervaloNum(S: string): string;
     function formataIntervaloNum(S: string): string;
     function maiorLista(L: string): string;
@@ -5489,7 +5490,7 @@ begin
     corCampoBusca(TFDQuery(DM.qrBIBLIA_VERSICULOS),busBibliaVersiculo,nil);
 
     if (not (DM.qrBIBLIA_LIVROS.Eof)) and (trim(loadCol.Strings.Values['BIBLIA_VERSICULO']) <> '') then
-      DM.qrBIBLIA_VERSICULOS.Locate('VERSICULO',loadCol.Strings.Values['BIBLIA_VERSICULO'],[]);
+      DM.qrBIBLIA_VERSICULOS.Locate('VERSICULO',primeiroIntervaloNum(loadCol.Strings.Values['BIBLIA_VERSICULO']),[]);
 
   end
   else if (tipo = 'BUS') then
@@ -12809,6 +12810,16 @@ begin
   end;
 end;
 
+function TfmIndex.primeiroIntervaloNum(S: string): string;
+var
+  p: Integer;
+begin
+  Result := Trim(S);
+  p := Pos(',', Result);
+  if (p > 0) then
+    Result := Trim(Copy(Result, 1, p-1));
+end;
+
 function TfmIndex.geraIntervaloNum(S: string): string;
 var
   str: TStringList;
@@ -16125,7 +16136,7 @@ begin
 
 
   DBCtrlGridBibliaVersiculo.Refresh;
-  DBCtrlGridBibliaVersiculoPaintPanel(DBCtrlGridBibliaVersiculo,StrToInt('0'+loadCol.Strings.Values['BIBLIA_VERSICULO']),nil,Rect(1, 1, DBCtrlGridBibliaVersiculo.PanelWidth-2, DBCtrlGridBibliaVersiculo.PanelHeight-2));
+  DBCtrlGridBibliaVersiculoPaintPanel(DBCtrlGridBibliaVersiculo,StrToInt('0'+primeiroIntervaloNum(loadCol.Strings.Values['BIBLIA_VERSICULO'])),nil,Rect(1, 1, DBCtrlGridBibliaVersiculo.PanelWidth-2, DBCtrlGridBibliaVersiculo.PanelHeight-2));
 end;
 
 procedure TfmIndex.DBCtrlGridBibliaVersiculoPaintPanel(
