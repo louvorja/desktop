@@ -8826,7 +8826,8 @@ end;
 
 procedure TfmIndex.player(url: string;video: Boolean);
 var
-  monitor: integer;
+  monitor, i: integer;
+  erro: cardinal;
 begin
   if (fPlayer <> nil) then
     fPlayer.Close;

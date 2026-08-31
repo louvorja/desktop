@@ -121,7 +121,7 @@ object fTransmitir: TfTransmitir
         Left = 5
         Top = 20
         Width = 368
-        Height = 20
+        Height = 19
         Margins.Left = 5
         Margins.Top = 0
         Margins.Right = 5
@@ -200,7 +200,7 @@ object fTransmitir: TfTransmitir
         Left = 5
         Top = 20
         Width = 90
-        Height = 20
+        Height = 19
         Margins.Left = 5
         Margins.Top = 0
         Margins.Right = 5
@@ -280,7 +280,7 @@ object fTransmitir: TfTransmitir
         Left = 5
         Top = 20
         Width = 140
-        Height = 20
+        Height = 19
         Margins.Left = 5
         Margins.Top = 0
         Margins.Right = 5
@@ -573,7 +573,7 @@ object fTransmitir: TfTransmitir
       AlignWithMargins = True
       Left = 111
       Top = 3
-      Width = 423
+      Width = 332
       Height = 18
       Cursor = crHandPoint
       Margins.Left = 5
@@ -755,7 +755,7 @@ object fTransmitir: TfTransmitir
       AlignWithMargins = True
       Left = 129
       Top = 3
-      Width = 405
+      Width = 314
       Height = 18
       Cursor = crHandPoint
       Margins.Left = 5
@@ -1078,7 +1078,7 @@ object fTransmitir: TfTransmitir
       AlignWithMargins = True
       Left = 111
       Top = 3
-      Width = 423
+      Width = 332
       Height = 18
       Cursor = crHandPoint
       Margins.Left = 5
@@ -1581,9 +1581,9 @@ object fTransmitir: TfTransmitir
     end
     object lblLink: TbsSkinLinkLabel
       AlignWithMargins = True
-      Left = 42
+      Left = 105
       Top = 3
-      Width = 492
+      Width = 338
       Height = 18
       Cursor = crHandPoint
       Margins.Left = 5
@@ -1616,7 +1616,7 @@ object fTransmitir: TfTransmitir
       AlignWithMargins = True
       Left = 5
       Top = 3
-      Width = 29
+      Width = 92
       Height = 18
       Margins.Left = 5
       HintImageIndex = 0

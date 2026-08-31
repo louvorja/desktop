@@ -206,7 +206,8 @@ implementation
 {$R *.dfm}
 
 uses
-  fmMusica, fmMenu, fmQRCode;
+  fmMusica, fmMenu, fmQRCode, dmComponentes, fmMonitorSorteio, fmVideoOn, Vcl.MPlayer,
+  System.SyncObjs, System.StrUtils, System.IOUtils, IdURI, IdGlobal;
 
 // ── Enumeração de interfaces de rede (iphlpapi) ─────────────────────────────
 
