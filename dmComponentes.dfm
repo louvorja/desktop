@@ -96032,6 +96032,22 @@ object DM: TDM
       item
         Name = 'DIR'
         DataType = ftMemo
+      end
+      item
+        Name = 'DIR_PB'
+        DataType = ftMemo
+      end
+      item
+        Name = 'TEM_AUDIO'
+        DataType = ftBoolean
+      end
+      item
+        Name = 'TEM_AUDIO_PB'
+        DataType = ftBoolean
+      end
+      item
+        Name = 'EH_SLIDE'
+        DataType = ftBoolean
       end>
     IndexDefs = <>
     Params = <>

@@ -1850,7 +1850,8 @@ type
     procedure bsSkinButton15Click(Sender: TObject);
     procedure DBGridDrawColumnCell(Sender: TObject; const Rect: TRect; DataCol: Integer; Column: TbsColumn; State: TGridDrawState);
     procedure AjustaLarguraCamposDBGrid(DBGrid: TbsSkinDbGrid);
-    procedure abrirArquivo(url: string;externo: Boolean = false);
+    procedure abrirArquivo(url: string;externo: Boolean = false;
+      sairSeInvalido: Boolean = false);
     procedure bsSkinSpeedButton46Click(Sender: TObject);
     procedure bsRibbon1Buttons3Click(Sender: TObject);
     procedure ExcluirTodas1Click(Sender: TObject);
@@ -1888,6 +1889,30 @@ type
     procedure abreVideoOn(videoID: string; videoTITULO: string = '');
     procedure abreLetraMusica(tipo: string;param: string;musicaID: Integer;audio: boolean = True);
     procedure abreLetraMusicaAlbum(albumID: Integer;musicaID: Integer = 0);
+
+    //Prepara um .slja/.lja para exibição: devolve o caminho do .lja pronto
+    //para ler e diz se o áudio deve tocar. O .slja é um zip, e precisa ser
+    //extraído antes.
+    function preparaArquivoSlides(arq: string; out audio: Boolean): string;
+
+    //Lê da seção [Geral] do pacote a faixa declarada e se ela deve tocar,
+    //sem extrair o pacote
+    function leGeralSlides(arq: string; out faixa: string): Boolean;
+
+    //Diz se o nome indica a versão playback, devolvendo nele o nome da música
+    function ehNomePlayback(var nome: string): Boolean;
+
+    //Diz se o pacote de slides traz música, sem extraí-lo
+    function slidesTemAudio(arq: string): Boolean;
+
+    //Deixa a faixa do pacote pronta para tocar sozinha e devolve o caminho
+    function extraiAudioSlides(arq: string): string;
+
+    //Abre um item de coletânea personalizada pelo botão correspondente
+    procedure abreSlidesArquivo(arq, arqPB: string; tag: Integer);
+
+    //Reproduz em sequência os slides de uma pasta de coletânea personalizada
+    procedure abreSlidesPasta(dir: string);
     procedure abreArquivoMusica(musicaID: Integer;album: string = '';url: string = '');
     procedure player(url: string;video: Boolean = true);
     procedure sbVideoOnAreaExtendidaChange(Sender: TObject);
@@ -1986,7 +2011,7 @@ type
     procedure ckSlideTxtFormatPersoClick(Sender: TObject);
     procedure seSorteioTempoChange(Sender: TObject);
     function diretorio(dir:string):string;
-    procedure processaArquivo(arq: string);
+    procedure processaArquivo(arq: string; sairSeInvalido: Boolean = false);
     procedure ExportarMusicaClick(Sender: TObject);
     procedure miOpcExportar1Click(Sender: TObject);
     procedure exportarMusica(id:integer;audio:boolean;nome:string = '';param:string = '');
@@ -3573,7 +3598,8 @@ begin
   DM.tmrPlayer.Enabled := True;
 end;
 
-procedure TfmIndex.abrirArquivo(url: string;externo: Boolean);
+procedure TfmIndex.abrirArquivo(url: string;externo: Boolean;
+  sairSeInvalido: Boolean);
 var
   ext: string;
 begin
@@ -3584,7 +3610,7 @@ begin
     if externo
       then ShellExecute(handle, nil, PChar(url), nil, nil, SW_MAXIMIZE)
     else if (ext = '.slja') or (ext = '.lja')
-      then processaArquivo(url)
+      then processaArquivo(url, sairSeInvalido)
     else if (ckPlayerAudio.Checked)
       and ((ext = '.mp3') or (ext = '.wma') or (ext = '.wav')) then
     begin
@@ -4795,7 +4821,9 @@ begin
     and (Message.Msg = WM_LOUVORJA_ABRE_ARQUIVO)
     and (Trim(arquivo_recebido) <> '') then
   begin
-    //Mesmo caminho usado pelos itens da liturgia
+    //Mesmo caminho usado pelos itens da liturgia. O programa já estava aberto
+    //quando o arquivo chegou, então um arquivo inválido apenas avisa: encerrar
+    //aqui derrubaria a sessão que o usuário já tinha em andamento
     abrirArquivo(arquivo_recebido);
     arquivo_recebido := '';
     Exit;
@@ -13439,41 +13467,403 @@ begin
   SorteioContador;
 end;
 
-procedure TfmIndex.processaArquivo(arq: string);
+{
+  Diz se um pacote de slides toca música, sem extraí-lo.
+
+  São duas condições, e as duas precisam valer: o pacote declarar uma faixa em
+  [Geral] url_musica, e estar configurado para tocá-la em [Geral] audio. Um
+  pacote com música desligada se comporta como se fosse só letra - nada toca,
+  e a reprodução em sequência pararia nele -, então para efeito de menu ele
+  não tem áudio.
+
+  Num .slja essas chaves estão dentro do zip, e extrair o pacote inteiro só
+  para lê-las sairia caro: um .slja com áudio passa de 4 MB, e a lista precisa
+  consultar todos os itens da pasta ao ser montada. Lendo apenas a entrada
+  slides.lja a consulta fica em menos de um milissegundo por arquivo, contra
+  dezenas se fosse pela extração.
+}
+function TfmIndex.leGeralSlides(arq: string; out faixa: string): Boolean;
+var
+  ext, linha, toca: string;
+  ZipFile: TZipFile;
+  bytes: TBytes;
+  texto: TStringList;
+  i: Integer;
+  emGeral: Boolean;
+begin
+  Result := False;
+  faixa := '';
+  ext := LowerCase(ExtractFileExt(arq));
+
+  if (ext = '.lja') then
+  begin
+    faixa := Trim(lerParam('Geral', 'url_musica', '',
+      ExtractFileName(arq), ExtractFilePath(arq)));
+    toca := Trim(lerParam('Geral', 'audio', '1',
+      ExtractFileName(arq), ExtractFilePath(arq)));
+    Result := (toca = '1');
+    Exit;
+  end;
+
+  if (ext <> '.slja') then
+    Exit;
+
+  texto := TStringList.Create;
+  try
+    ZipFile := TZipFile.Create;
+    try
+      try
+        ZipFile.Open(arq, zmRead);
+        //Só a entrada dos slides, direto para a memória
+        ZipFile.Read('slides.lja', bytes);
+        ZipFile.Close;
+      except
+        Exit;
+      end;
+    finally
+      ZipFile.Free;
+    end;
+
+    if (Length(bytes) = 0) then
+      Exit;
+
+    texto.Text := TEncoding.ANSI.GetString(bytes);
+
+    //Ausente, o audio vale como ligado - é o mesmo padrão que o programa usa
+    //ao abrir o arquivo
+    toca := '1';
+
+    emGeral := False;
+    for i := 0 to texto.Count - 1 do
+    begin
+      linha := Trim(texto[i]);
+
+      if (linha <> '') and (linha[1] = '[') then
+      begin
+        //Depois da seção [Geral] não há mais o que ler
+        if emGeral then
+          Break;
+        emGeral := SameText(linha, '[Geral]');
+        Continue;
+      end;
+
+      if not emGeral then
+        Continue;
+
+      if SameText(Copy(linha, 1, 11), 'url_musica=') then
+        faixa := Trim(Copy(linha, 12, MaxInt))
+      else if SameText(Copy(linha, 1, 6), 'audio=') then
+        toca := Trim(Copy(linha, 7, MaxInt));
+    end;
+
+    Result := (toca = '1');
+  finally
+    texto.Free;
+  end;
+end;
+
+{
+  Diz se o nome do arquivo indica a versão playback e, em caso afirmativo,
+  devolve nele o nome da música sem o sufixo.
+
+  O sufixo é uma convenção digitada à mão, então o espaço em volta do traço é
+  tolerado: "-PB", " -PB", "- PB" e " - PB" valem todos. O nome volta aparado
+  para que o playback caia sempre na mesma chave do cantado.
+}
+function TfmIndex.ehNomePlayback(var nome: string): Boolean;
+var
+  s: string;
+begin
+  Result := False;
+
+  s := TrimRight(nome);
+  if (Length(s) < 3) or not SameText(Copy(s, Length(s) - 1, 2), 'PB') then
+    Exit;
+
+  s := TrimRight(Copy(s, 1, Length(s) - 2));
+  if (s = '') or (s[Length(s)] <> '-') then
+    Exit;
+
+  //Sem nada antes do traço não há música a que este playback pertença
+  s := Trim(Copy(s, 1, Length(s) - 1));
+  if (s = '') then
+    Exit;
+
+  nome := s;
+  Result := True;
+end;
+
+function TfmIndex.slidesTemAudio(arq: string): Boolean;
+var
+  faixa: string;
+begin
+  //Sem faixa declarada, ou com o áudio desligado, o pacote é só de letras
+  Result := leGeralSlides(arq, faixa) and (faixa <> '');
+end;
+
+{
+  Deixa a faixa de áudio de um pacote de slides pronta para tocar sozinha,
+  sem abrir os slides, e devolve o caminho dela.
+
+  No .lja a faixa é um arquivo ao lado; no .slja ela está dentro do pacote e
+  precisa ser extraída para a pasta temporária, que o programa limpa ao fechar.
+}
+function TfmIndex.extraiAudioSlides(arq: string): string;
+var
+  faixa, dir_t: string;
+  ZipFile: TZipFile;
+begin
+  Result := '';
+
+  if not leGeralSlides(arq, faixa) or (faixa = '') then
+    Exit;
+
+  if (LowerCase(ExtractFileExt(arq)) = '.lja') then
+  begin
+    faixa := ExtractFilePath(arq) + faixa;
+    if FileExists(faixa) then
+      Result := faixa;
+    Exit;
+  end;
+
+  dir_t := dir_temp+'~audio_'+FormatDateTime('yyyymmddHHMMSSZZZ', now());
+
+  ZipFile := TZipFile.Create;
+  try
+    try
+      ZipFile.Open(arq, zmRead);
+      //Só a faixa sai do pacote: os slides não interessam aqui
+      if (ZipFile.IndexOf(faixa) < 0) then
+        Exit;
+      ZipFile.Extract(faixa, dir_t);
+      ZipFile.Close;
+    except
+      Exit;
+    end;
+  finally
+    ZipFile.Free;
+  end;
+
+  faixa := IncludeTrailingPathDelimiter(dir_t)+faixa;
+  if FileExists(faixa) then
+    Result := faixa;
+end;
+
+{
+  Abre um item de coletânea personalizada pelo botão correspondente.
+
+  As tags são as mesmas dos botões das coletâneas do programa:
+  1 slides cantado, 2 slides playback, 3 slides sem áudio,
+  4 somente áudio cantado, 5 somente áudio playback.
+}
+procedure TfmIndex.abreSlidesArquivo(arq, arqPB: string; tag: Integer);
+var
+  alvo, pronto: string;
+  audio: Boolean;
+begin
+  if (tag = 2) or (tag = 5)
+    then alvo := arqPB
+    else alvo := arq;
+
+  if (alvo = '') then
+  begin
+    application.MessageBox(PChar('Esta música não possui playback!'), titulo, mb_ok + MB_ICONEXCLAMATION);
+    Exit;
+  end;
+
+  if (tag = 4) or (tag = 5) then
+  begin
+    alvo := extraiAudioSlides(alvo);
+    if (alvo = '') then
+      application.MessageBox(PChar('Não foi possível abrir o áudio desta música!'), titulo, mb_ok + mb_iconerror)
+    else
+      abrirArquivo(alvo);
+    Exit;
+  end;
+
+  pronto := preparaArquivoSlides(alvo, audio);
+  if (pronto = '') then
+  begin
+    application.MessageBox(PChar('Arquivo "'+alvo+'" inválido!'), titulo, mb_ok + mb_iconerror);
+    Exit;
+  end;
+
+  //O botão "sem áudio" mostra os mesmos slides, só que sem tocar a faixa
+  if (tag = 3) then
+    audio := False;
+
+  abreLetraMusica('EXT', pronto, -1, audio);
+end;
+
+{
+  Deixa um .slja ou .lja pronto para ser exibido.
+
+  Extraído de processaArquivo para poder ser reaproveitado ao encadear os
+  arquivos de uma coletânea personalizada, sem repetir a regra do zip nem a
+  leitura do parâmetro de áudio.
+
+  Devolve vazio quando a extensão não é de slides.
+}
+function TfmIndex.preparaArquivoSlides(arq: string; out audio: Boolean): string;
 var
   ext: string;
-  audio: Boolean;
   ZipFile: TZipFile;
   dir_t: string;
 begin
-  ext := (ExtractFileExt(arq));
+  Result := '';
+  audio := True;
+
+  ext := LowerCase(ExtractFileExt(arq));
+
   if (ext = '.slja') then
   begin
+    //O .slja é um zip: os slides estão em slides.lja dentro dele
     ZipFile := TZipFile.Create;
     try
       dir_t := dir_temp+'~read_'+FormatDateTime('yyyymmddHHMMSSZZZ', now());
-      ZipFile.Open(arq, zmRead);
-      ZipFile.ExtractAll(dir_t);
-      ZipFile.Close;
+      try
+        ZipFile.Open(arq, zmRead);
+        ZipFile.ExtractAll(dir_t);
+        ZipFile.Close;
+      except
+        //Pacote corrompido: para quem chamou vale como arquivo invalido
+        Exit;
+      end;
       arq := dir_t+'\slides.lja';
     finally
       ZipFile.Free;
     end;
-    audio := (lerParam('Geral', 'audio', '1', ExtractFileName(arq), ExtractFilePath(arq)) = '1');
-    abreLetraMusica('EXT',arq,-1,audio);
+
+    //Um zip que abre mas nao traz os slides tambem nao serve. Sem esta
+    //conferencia o caminho inexistente seguia adiante e quebrava mais na frente
+    if not FileExists(arq) then
+      Exit;
   end
-  else
-  if (ext = '.lja') then
-  begin
-    audio := (lerParam('Geral', 'audio', '1', ExtractFileName(arq), ExtractFilePath(arq)) = '1');
-    abreLetraMusica('EXT',arq,-1,audio);
-  end
+  else if (ext <> '.lja') then
+    Exit
+  else if not FileExists(arq) then
+    Exit;
+
+  audio := (lerParam('Geral', 'audio', '1', ExtractFileName(arq), ExtractFilePath(arq)) = '1');
+  Result := arq;
+end;
+
+{
+  Reproduz em sequência os slides de uma coletânea personalizada.
+
+  A coletânea personalizada é uma pasta, não um álbum do banco, então não há
+  ID_ALBUM nem a consulta que o fmMusica usa para encadear. Aqui a fila é a
+  própria lista de arquivos, guardada no fmMusica, que avança quando os slides
+  de um arquivo terminam.
+
+  Só entram .slja e .lja: a tela só oferece esta opção quando a pasta inteira
+  é de slides, então qualquer outra coisa aqui seria engano.
+}
+procedure TfmIndex.abreSlidesPasta(dir: string);
+var
+  ordem, dados, arquivos: TStringList;
+  sr: TSearchRec;
+  ret, i: Integer;
+  ext, nome, chave, primeiro: string;
+  ehPB, audio: Boolean;
+begin
+  dir := IncludeTrailingPathDelimiter(dir);
+  if not DirectoryExists(dir) then
+    Exit;
+
+  //Uma entrada por música, como na lista da tela: a chave ordena e o objeto
+  //guarda o que foi achado para ela  --  [0] cantado  [1] playback
+  ordem := TStringList.Create;
+  arquivos := TStringList.Create;
+  try
+    ret := FindFirst(dir + '*.*', faAnyFile, sr);
+    try
+      while (ret = 0) do
+      begin
+        if (sr.Name <> '.') and (sr.Name <> '..') and (sr.Attr <> faDirectory) then
+        begin
+          ext := LowerCase(ExtractFileExt(sr.Name));
+
+          if (ext = '.slja') or (ext = '.lja') then
+          begin
+            nome := Trim(ChangeFileExt(sr.Name, ''));
+            ehPB := ehNomePlayback(nome);
+            chave := LowerCase(nome);
+
+            i := ordem.IndexOf(chave);
+            if (i < 0) then
+            begin
+              dados := TStringList.Create;
+              dados.Add('');
+              dados.Add('');
+              i := ordem.AddObject(chave, dados);
+            end;
+
+            dados := TStringList(ordem.Objects[i]);
+            if ehPB
+              then dados[1] := dir + sr.Name
+              else dados[0] := dir + sr.Name;
+          end;
+        end;
+        ret := FindNext(sr);
+      end;
+    finally
+      FindClose(sr);
+    end;
+
+    //Mesma ordem que a lista da tela apresenta
+    ordem.Sort;
+
+    for i := 0 to ordem.Count - 1 do
+    begin
+      dados := TStringList(ordem.Objects[i]);
+      //A cantada sempre se sobressai; o playback entra quando ela não existe
+      if (dados[0] <> '')
+        then arquivos.Add(dados[0])
+        else arquivos.Add(dados[1]);
+    end;
+
+    if (arquivos.Count = 0) then
+      Exit;
+
+    primeiro := preparaArquivoSlides(arquivos[0], audio);
+    if (primeiro = '') then
+    begin
+      application.MessageBox(PChar('Arquivo "'+arquivos[0]+'" inválido!'), titulo, mb_ok + mb_iconerror);
+      Exit;
+    end;
+
+    abreLetraMusica('EXT', primeiro, -1, audio);
+
+    //Depois de aberto: o fmMusica passa a ser dono da fila
+    if (fMusica <> nil) then
+      fMusica.defineFila(arquivos, 0);
+  finally
+    for i := 0 to ordem.Count - 1 do
+      ordem.Objects[i].Free;
+    ordem.Free;
+    arquivos.Free;
+  end;
+end;
+
+procedure TfmIndex.processaArquivo(arq: string; sairSeInvalido: Boolean);
+var
+  audio: Boolean;
+  pronto: string;
+begin
+  pronto := preparaArquivoSlides(arq, audio);
+
+  if (pronto <> '') then
+    abreLetraMusica('EXT',pronto,-1,audio)
   else
   begin
     Application.MessageBox(PChar('Arquivo "'+arq+'" inválido!'),TITULO,mb_ok+mb_iconerror);
-    DM.tmrSair.Enabled := True;
+
+    //Só encerra quando o programa foi acionado de fora para abrir este
+    //arquivo; aberto de dentro, um arquivo ruim não pode derrubar a sessão
+    if sairSeInvalido then
+      DM.tmrSair.Enabled := True;
   end;
-//  showmessage(ext);
 end;
 
 procedure TfmIndex.RichEdit1Exit(Sender: TObject);

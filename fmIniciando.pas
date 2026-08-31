@@ -309,7 +309,9 @@ begin
   if externo then
   begin
     //**SE ARQUIVO EXTERNO, ABRE ARQUIVO****************************************
-    fmIndex.processaArquivo(ParamStr(1));
+    //Programa aberto so para exibir este arquivo: sendo invalido, avisa e
+    //encerra, porque nao ha sessao nenhuma para preservar
+    fmIndex.processaArquivo(ParamStr(1), True);
     fIniciando.Visible := False;
   end
   else
