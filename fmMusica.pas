@@ -666,6 +666,9 @@ end;
 procedure TfMusica.carregaSlides;
 var
   i: integer;
+  numHino: string;
+  capaNum: boolean;
+  tamTitulo: integer;
   tempo: string;
   info: string;
   aimg,uimg: string;
@@ -694,6 +697,25 @@ begin
     DM.qrSLIDE_MUSICA.ParamByName('MUSICA_ID').Value := musicaID;
     DM.qrSLIDE_MUSICA.Open;
 
+    //O numero so existe para o Hinario Adventista; consultar a tabela dele ja
+    //deixa de fora o Hinario 1996 e qualquer outra colecao
+    numHino := '';
+    if (musicaID > 0) and (fmIndex.ckMusicaNumeroHino.Checked) then
+    begin
+      try
+        DM.qrHINO_NUMERO.Close;
+        DM.qrHINO_NUMERO.ParamByName('ID').Value := musicaID;
+        DM.qrHINO_NUMERO.Open;
+        if not DM.qrHINO_NUMERO.IsEmpty then
+          numHino := Trim(DM.qrHINO_NUMERO.FieldByName('FAIXA').AsString);
+        if (numHino <> '') then
+          numHino := 'Hino ' + numHino;
+        DM.qrHINO_NUMERO.Close;
+      except
+        numHino := '';
+      end;
+    end;
+
     while not DM.qrSLIDE_MUSICA.eof do
     begin
       if (DM.qrSLIDE_MUSICA.RecNo <= 1) and (param = 'PB') and (DM.qrSLIDE_MUSICA.FieldByName('URL_MUSICA_PB').AsString = '') then
@@ -719,7 +741,16 @@ begin
         else DM.cdsSLIDE_MUSICA.FieldByName('URL_MUSICA').Value := DM.qrSLIDE_MUSICA.FieldByName('URL_MUSICA').AsString;
       DM.cdsSLIDE_MUSICA.FieldByName('LETRA_UCASE').Value := Ansiuppercase(DM.qrSLIDE_MUSICA.FieldByName('LETRA_UCASE').AsString);
       lbLetras.Items.Add(Ansiuppercase(DM.qrSLIDE_MUSICA.FieldByName('LETRA_UCASE').AsString));
-      DM.cdsSLIDE_MUSICA.FieldByName('LETRA_AUX').Value := DM.qrSLIDE_MUSICA.FieldByName('LETRA_AUX').AsString;
+      //Numero do hino sobre o titulo. Vai no texto auxiliar, que a transmissao
+      //nao envia (so o lblLetra segue para o servidor), entao nao interfere nela.
+      //Nao sobrescreve um auxiliar que a musica ja tenha.
+      capaNum := (numHino <> '') and
+                 (DM.qrSLIDE_MUSICA.FieldByName('TIPO').AsString = 'CAPA') and
+                 (Trim(DM.qrSLIDE_MUSICA.FieldByName('LETRA_AUX').AsString) = '');
+      if capaNum then
+        DM.cdsSLIDE_MUSICA.FieldByName('LETRA_AUX').Value := numHino
+      else
+        DM.cdsSLIDE_MUSICA.FieldByName('LETRA_AUX').Value := DM.qrSLIDE_MUSICA.FieldByName('LETRA_AUX').AsString;
       DM.cdsSLIDE_MUSICA.FieldByName('ORDEM').Value := DM.qrSLIDE_MUSICA.FieldByName('ORDEM').AsInteger;
       if (param = 'PB')
         then DM.cdsSLIDE_MUSICA.FieldByName('TEMPO').Value := DM.qrSLIDE_MUSICA.FieldByName('TEMPO_PB').AsString
@@ -766,6 +797,19 @@ begin
         DM.cdsSLIDE_MUSICA.FieldByName('COR_LETRA').Value := DM.qrSLIDE_MUSICA.FieldByName('COR_LETRA').AsString;
         DM.cdsSLIDE_MUSICA.FieldByName('TAMANHO_LETRA_AUX').Value := DM.qrSLIDE_MUSICA.FieldByName('TAMANHO_LETRA_AUX').AsInteger;
         DM.cdsSLIDE_MUSICA.FieldByName('COR_LETRA_AUX').Value := DM.qrSLIDE_MUSICA.FieldByName('COR_LETRA_AUX').AsString;
+      end;
+
+      //O numero do hino fica com metade da altura do titulo. Calculado a partir
+      //do tamanho que este slide vai usar, para acompanhar se o titulo mudar
+      if capaNum then
+      begin
+        tamTitulo := DM.cdsSLIDE_MUSICA.FieldByName('TAMANHO_LETRA').AsInteger;
+        //Mesmo padrao que o acaoSlide adota na capa quando nada foi definido
+        if (tamTitulo <= 0) then
+          tamTitulo := 18;
+        if (tamTitulo < 2) then
+          tamTitulo := 2;
+        DM.cdsSLIDE_MUSICA.FieldByName('TAMANHO_LETRA_AUX').Value := tamTitulo div 2;
       end;
       if fmIndex.ckSlideImgFormatPerso.Checked then
       begin
