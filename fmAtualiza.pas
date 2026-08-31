@@ -12,6 +12,10 @@ uses
   IdFTP, Vcl.ComCtrls, IdBaseComponent, IdExplicitTLSClientServerBase;
 
 type
+  //A tela serve a dois usos: a sincronizacao de arquivos (modo padrao) e o
+  //download avulso de uma lista de URLs (itens agendados). Ver http_baixa.
+  TModoAtualiza = (maAtualizacao, maDownload);
+
   TfAtualiza = class(TForm)
     bsBusinessSkinForm1: TbsBusinessSkinForm;
     IdFTP1: TIdFTP;
@@ -30,6 +34,11 @@ type
     procedure FormActivate(Sender: TObject);
     procedure ftp_conecta();
     procedure ftp_baixa();
+    procedure http_baixa();
+    procedure httpDownloadWork(ASender: TObject; AWorkMode: TWorkMode;
+      AWorkCount: Int64);
+    procedure httpDownloadWorkBegin(ASender: TObject; AWorkMode: TWorkMode;
+      AWorkCountMax: Int64);
     procedure IdFTP1Work(ASender: TObject; AWorkMode: TWorkMode;
       AWorkCount: Int64);
     procedure IdFTP1WorkEnd(ASender: TObject; AWorkMode: TWorkMode);
@@ -44,6 +53,8 @@ type
     { Private declarations }
     arquivo_temp: string;
     arq: Integer;
+    //OnActivate dispara de novo quando a janela reganha o foco
+    download_executando: Boolean;
   public
     { Public declarations }
     arquivos: TStringList;
@@ -55,6 +66,15 @@ type
     ftp_senha: string;
     cancela: Boolean;
     erro: Boolean;
+
+    //Modo download avulso: preencher urls e destinos (mesma ordem) antes do
+    //ShowModal. Ao voltar, baixados diz quantos vieram e arquivos_falha lista
+    //as URLs que nao deram certo.
+    modo: TModoAtualiza;
+    urls: TStringList;
+    destinos: TStringList;
+    titulo_download: string;
+    baixados: Integer;
   end;
 
 var
@@ -66,6 +86,159 @@ uses
   fmMenu, dmComponentes, fmIniciando;
 
 {$R *.dfm}
+
+//Baixa a lista de "urls" para os caminhos de "destinos" (mesma ordem), usando
+//a mesma tela da sincronizacao de arquivos: pbProgressoT mostra o arquivo atual
+//dentro do total e pbProgresso o progresso do arquivo.
+//Cada arquivo e baixado para ".~tmp" e so recebe o nome final quando termina,
+//entao um download interrompido nunca deixa arquivo pela metade no lugar certo.
+procedure TfAtualiza.http_baixa;
+var
+  i: Integer;
+  destino, temporario: string;
+  saida: TFileStream;
+  workAnterior: TWorkEvent;
+  workBeginAnterior: TWorkBeginEvent;
+begin
+  baixados := 0;
+
+  if (urls = nil) or (destinos = nil) or (urls.Count = 0) or
+     (urls.Count <> destinos.Count) then
+  begin
+    erro := True;
+    tmrFecha.Enabled := True;
+    Exit;
+  end;
+
+  if (trim(titulo_download) <> '') then
+    sTitulo.Caption := titulo_download;
+
+  pbProgresso.Style := pbstNormal;
+  pbProgresso.Position := 0;
+  pbProgresso.Max := 0;
+  pbProgressoT.Position := 0;
+  pbProgressoT.Max := urls.Count;
+
+  //O IdHTTP1 e compartilhado com a API do programa: os handlers de progresso
+  //dele apontam para outro lugar e sao devolvidos no final.
+  if download_executando then
+    Exit;
+  download_executando := True;
+
+  workAnterior := DM.IdHTTP1.OnWork;
+  workBeginAnterior := DM.IdHTTP1.OnWorkBegin;
+  DM.IdHTTP1.OnWork := httpDownloadWork;
+  DM.IdHTTP1.OnWorkBegin := httpDownloadWorkBegin;
+  try
+    for i := 0 to urls.Count - 1 do
+    begin
+      if cancela or tmrFecha.Enabled then
+        Break;
+
+      destino := trim(destinos[i]);
+      if (destino = '') then
+        Continue;
+
+      sProgressoT.Caption := 'Arquivo ' + IntToStr(i + 1) + ' / ' + IntToStr(urls.Count);
+      pbProgressoT.Position := i + 1;
+      pbProgresso.Position := 0;
+      pbProgresso.Max := 0;
+      pbProgresso.Style := pbstMarquee;
+      sProgresso.Caption := '';
+      sStatus.Caption := ExtractFileName(destino);
+      Application.ProcessMessages;
+
+      //Ja baixado antes: aproveita
+      if FileExists(destino) then
+      begin
+        Inc(baixados);
+        Continue;
+      end;
+
+      if not DirectoryExists(ExtractFilePath(destino)) then
+        ForceDirectories(ExtractFilePath(destino));
+
+      temporario := destino + '.~tmp';
+      if FileExists(temporario) then
+        DeleteFile(temporario);
+
+      try
+        saida := TFileStream.Create(temporario, fmCreate);
+        try
+          //Sem os cabecalhos de outras chamadas: o token da API do usuario nao
+          //pode ir junto para um servidor de fora
+          DM.IdHTTP1.Request.CustomHeaders.Clear;
+          DM.IdHTTP1.Get(urls[i], saida);
+        finally
+          saida.Free;
+        end;
+
+        if cancela or tmrFecha.Enabled then
+        begin
+          if FileExists(temporario) then
+            DeleteFile(temporario);
+          Break;
+        end;
+
+        if RenameFile(temporario, destino) then
+          Inc(baixados)
+        else
+        begin
+          arquivos_falha.Add(urls[i]);
+          if FileExists(temporario) then
+            DeleteFile(temporario);
+        end;
+      except
+        on E: Exception do
+        begin
+          fmIndex.gravaLog('Falha ao baixar ' + urls[i] + ': ' + E.Message);
+          if not (cancela or tmrFecha.Enabled) then
+            arquivos_falha.Add(urls[i]);
+          if FileExists(temporario) then
+            DeleteFile(temporario);
+        end;
+      end;
+    end;
+  finally
+    DM.IdHTTP1.OnWork := workAnterior;
+    DM.IdHTTP1.OnWorkBegin := workBeginAnterior;
+    download_executando := False;
+  end;
+
+  pbProgresso.Style := pbstNormal;
+  pbProgresso.Position := pbProgresso.Max;
+  pbProgressoT.Position := pbProgressoT.Max;
+  tmrFecha.Enabled := True;
+end;
+
+procedure TfAtualiza.httpDownloadWork(ASender: TObject; AWorkMode: TWorkMode;
+  AWorkCount: Int64);
+begin
+  if (tmrFecha.Enabled) then Exit;
+
+  if (pbProgresso.Max > 0) then
+  begin
+    pbProgresso.Position := AWorkCount;
+    sProgresso.Caption := IntToStr(AWorkCount div 1024) + ' KB / ' +
+      IntToStr(pbProgresso.Max div 1024) + ' KB';
+  end
+  else
+    sProgresso.Caption := IntToStr(AWorkCount div 1024) + ' KB';
+end;
+
+procedure TfAtualiza.httpDownloadWorkBegin(ASender: TObject; AWorkMode: TWorkMode;
+  AWorkCountMax: Int64);
+begin
+  if (tmrFecha.Enabled) then Exit;
+
+  pbProgresso.Position := 0;
+  pbProgresso.Max := AWorkCountMax;
+  //Servidor que nao informa o tamanho: barra em movimento em vez de parada
+  if (pbProgresso.Max > 0) then
+    pbProgresso.Style := pbstNormal
+  else
+    pbProgresso.Style := pbstMarquee;
+end;
 
 procedure TfAtualiza.ftp_baixa;
 var
@@ -242,6 +415,18 @@ end;
 
 procedure TfAtualiza.tmrFechaTimer(Sender: TObject);
 begin
+  //No modo download quem esta ocupado e o IdHTTP do DM, nao o FTP
+  if (modo = maDownload) then
+  begin
+    try
+      DM.IdHTTP1.Disconnect;
+    except
+      //conexao ja pode ter caido
+    end;
+    fAtualiza.Close;
+    Exit;
+  end;
+
   //tmrFecha.Enabled := False;
   try
     if IdFTP1.Connected then
@@ -289,6 +474,13 @@ begin
   tmrFecha.Enabled := False;
   arquivos_falha := TStringList.Create;
   sStatus.Caption := '';
+
+  //Modo download avulso: nao passa por nada do fluxo de atualizacao abaixo
+  if (modo = maDownload) then
+  begin
+    http_baixa;
+    Exit;
+  end;
 
   fmIndex.gravaLog('Conectando FTP');
 
