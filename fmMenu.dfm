@@ -52226,6 +52226,112 @@ object fmIndex: TfmIndex
               Visible = False
             end
           end
+          object pnlAgendadosDownload: TPanel
+            Left = 0
+            Top = 371
+            Width = 835
+            Height = 40
+            Align = alBottom
+            BevelOuter = bvNone
+            Caption = 'pnlAgendadosDownload'
+            Color = 2302755
+            ParentBackground = False
+            ShowCaption = False
+            TabOrder = 2
+            Visible = False
+            object lbAgendadosAviso: TbsSkinStdLabel
+              AlignWithMargins = True
+              Left = 3
+              Top = 3
+              Width = 829
+              Height = 21
+              EllipsType = bsetNone
+              UseSkinFont = False
+              UseSkinColor = False
+              DefaultFont.Charset = DEFAULT_CHARSET
+              DefaultFont.Color = clWindowText
+              DefaultFont.Height = -11
+              DefaultFont.Name = 'Tahoma'
+              DefaultFont.Style = []
+              SkinDataName = 'stdlabel'
+              Font.Charset = ANSI_CHARSET
+              Font.Color = clWhite
+              Font.Height = -15
+              Font.Name = 'Tahoma'
+              Font.Style = []
+              Align = alTop
+              Alignment = taCenter
+              Caption = 'Aviso'
+              Color = clWhite
+              ParentColor = False
+              Visible = False
+            end
+            object lbAgendadosInfo: TbsSkinStdLabel
+              AlignWithMargins = True
+              Left = 3
+              Top = 22
+              Width = 829
+              Height = 21
+              EllipsType = bsetNone
+              UseSkinFont = False
+              UseSkinColor = False
+              DefaultFont.Charset = DEFAULT_CHARSET
+              DefaultFont.Color = clWindowText
+              DefaultFont.Height = -11
+              DefaultFont.Name = 'Tahoma'
+              DefaultFont.Style = []
+              SkinDataName = 'stdlabel'
+              Font.Charset = ANSI_CHARSET
+              Font.Color = clWhite
+              Font.Height = -15
+              Font.Name = 'Tahoma'
+              Font.Style = []
+              Align = alClient
+              Alignment = taCenter
+              Caption = 'Informacao'
+              Color = clWhite
+              ParentColor = False
+              Visible = False
+            end
+            object btBaixarAgendados: TbsSkinButton
+              AlignWithMargins = True
+              Left = 3
+              Top = 22
+              Width = 829
+              Height = 21
+              HintImageIndex = 0
+              TabOrder = 0
+              Visible = False
+              SkinData = DM.bsSkinData1
+              SkinDataName = 'button'
+              DefaultFont.Charset = DEFAULT_CHARSET
+              DefaultFont.Color = clWindowText
+              DefaultFont.Height = -15
+              DefaultFont.Name = 'Tahoma'
+              DefaultFont.Style = []
+              DefaultWidth = 0
+              DefaultHeight = 0
+              UseSkinFont = False
+              Transparent = False
+              CheckedMode = False
+              ImageIndex = -1
+              AlwaysShowLayeredFrame = False
+              UseSkinSize = True
+              UseSkinFontColor = True
+              RepeatMode = False
+              RepeatInterval = 100
+              AllowAllUp = False
+              TabStop = True
+              CanFocused = True
+              Down = False
+              GroupIndex = 0
+              Caption = 'Baixar todos os videos restantes'
+              NumGlyphs = 1
+              Spacing = 1
+              Align = alClient
+              OnClick = btBaixarAgendadosClick
+            end
+          end
         end
         object Panel36: TPanel
           Left = 1

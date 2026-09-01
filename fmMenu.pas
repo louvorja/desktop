@@ -18,7 +18,8 @@ uses
   System.RegularExpressions, System.NetEncoding, System.IOUtils,
   BusinessSkinForm, bsSkinMenus, bsSkinCtrls, bsSkinTabs, bsButtonGroup,
   bsSkinBoxCtrls, bsSkinExCtrls, bsribbon, bsdbctrls, bsSkinShellCtrls,
-  bsSkinGrids, bsDBGrids, bsColorCtrls, bsPngImageList;
+  bsSkinGrids, bsDBGrids, bsColorCtrls, bsPngImageList,
+  uAgendados;
   (*"MidasLib" NECESSÁRIA PARA EVITAR ERRO DE ACCESS VIOLATION NO DM.cds*)
 
 type
@@ -862,6 +863,10 @@ type
     bsPngImageView13: TbsPngImageView;
     Panel34: TPanel;
     dbctrlItensAgendados: TDBCtrlGrid;
+    pnlAgendadosDownload: TPanel;
+    lbAgendadosAviso: TbsSkinStdLabel;
+    btBaixarAgendados: TbsSkinButton;
+    lbAgendadosInfo: TbsSkinStdLabel;
     Panel32: TPanel;
     GridPanel11: TGridPanel;
     bsSkinDBText6: TbsSkinDBText;
@@ -2209,8 +2214,11 @@ type
     procedure SaveBase64ImageToFile(const Base64String, FilePath: string);
     function ExtractBase64Data(const Base64String: string): string;
     procedure RestartApplication;
+    procedure btBaixarAgendadosClick(Sender: TObject);
   private
     { Private declarations }
+    //Download automatico de itens agendados (ver uAgendados.pas)
+    categoriaAgendadaNome: string;
     move_x,move_y:integer;
     move_panel: TPanel;
     move: Boolean;
@@ -2265,6 +2273,19 @@ type
     function caminhoLiturgia: string;
     procedure garanteUtf8Liturgia;
     function abreIniLiturgia: TMemIniFile;
+
+    //Download automatico de itens agendados. Uma categoria ganha o recurso
+    //quando existe config\agendados\<nome da categoria>.txt.
+    function nomeCategoriaAgendada(const idCategoria: string): string;
+    procedure sincronizaCategoriasAgendadas;
+    procedure atualizaRodapeAgendados;
+    function pendenciasAgendados(const categoria, idCategoria: string;
+      pendentes: TStringList): Integer;
+    function caminhoItemAgendado(const arquivo, info: string): string;
+    procedure agendaEpisodioBaixado(const idCategoria: string;
+      const episodio: TEpisodioAgendado; const arquivo: string);
+    procedure apagaArquivoDoItemAtualSePermitido;
+    function outroItemUsaArquivo(const idItem, arquivo: string): Boolean;
 
   public
     { Public declarations }
@@ -2988,6 +3009,9 @@ begin
     end;
     DM.cdsItensAgendados.Open;
     DM.cdsItensAgendadosClone.Open;
+
+    //Cria a categoria de cada lista de download que ainda nao existe
+    sincronizaCategoriasAgendadas;
 
     if cbRemoveItensAgendados.Checked  then removeItensAgendadosPassados;
   end;
@@ -4616,12 +4640,466 @@ begin
   DM.cdsItensAgendados.First;
   while not DM.cdsItensAgendados.eof do
   begin
+    //Item vencido: o arquivo so sai do disco se foi o programa que baixou
+    apagaArquivoDoItemAtualSePermitido;
     DM.cdsItensAgendados.Delete;
     DM.cdsItensAgendados.First;
 //    DM.cdsItensAgendados.Next;
   end;
   DM.cdsItensAgendados.Filter := filter;
 end;
+
+//****************************************************************************
+//DOWNLOAD AUTOMATICO DE ITENS AGENDADOS
+//
+//Uma categoria de itens agendados ganha download automatico quando existe um
+//arquivo config\agendados\<nome da categoria>.txt com as linhas "data,url".
+//O duplo clique no calendario continua abrindo o seletor de arquivo, para a
+//igreja poder colocar um video personalizado no lugar do episodio oficial.
+//Ver uAgendados.pas.
+//****************************************************************************
+
+//Nome da categoria a partir do ID (txtCategoria.Text guarda o ID, nao o nome).
+function TfmIndex.nomeCategoriaAgendada(const idCategoria: string): string;
+var
+  idAnterior: string;
+begin
+  Result := '';
+  if (trim(idCategoria) = '') or (not DM.cdsCategoriasItensAgendados.Active) then
+    Exit;
+
+  idAnterior := DM.cdsCategoriasItensAgendados.FieldByName('ID').AsString;
+  DM.cdsCategoriasItensAgendados.DisableControls;
+  try
+    if DM.cdsCategoriasItensAgendados.Locate('ID', idCategoria, []) then
+      Result := DM.cdsCategoriasItensAgendados.FieldByName('NOME').AsString;
+
+    if (idAnterior <> '') and (idAnterior <> idCategoria) then
+      DM.cdsCategoriasItensAgendados.Locate('ID', idAnterior, []);
+  finally
+    DM.cdsCategoriasItensAgendados.EnableControls;
+  end;
+end;
+
+//Cria a categoria de cada lista que ainda nao tem uma. E o que faz o
+//"Provai e vede" aparecer sozinho quando o txt e colocado na pasta.
+procedure TfmIndex.sincronizaCategoriasAgendadas;
+var
+  listas: TStringList;
+  i: Integer;
+  idAnterior, id: string;
+begin
+  uAgendados.dirConfigAgendados := dir_config;
+  if not DM.cdsCategoriasItensAgendados.Active then
+    Exit;
+
+  listas := categoriasComLista;
+  try
+    if (listas.Count = 0) then
+      Exit;
+
+    idAnterior := DM.cdsCategoriasItensAgendados.FieldByName('ID').AsString;
+    DM.cdsCategoriasItensAgendados.DisableControls;
+    try
+      for i := 0 to listas.Count - 1 do
+      begin
+        if (trim(listas[i]) = '') then
+          Continue;
+        if DM.cdsCategoriasItensAgendados.Locate('NOME', listas[i], [loCaseInsensitive]) then
+          Continue;
+
+        //Mesmo padrao de ID do cadastro manual. Em laco, dois podem cair no
+        //mesmo milissegundo: espera o relogio virar em vez de acusar erro.
+        repeat
+          id := FormatDateTime('ddmmyyyyhhnnsszzz', Now);
+          if DM.cdsCategoriasItensAgendados.Locate('ID', id, []) then
+            Sleep(2)
+          else
+            Break;
+        until False;
+
+        DM.cdsCategoriasItensAgendados.Append;
+        DM.cdsCategoriasItensAgendados.FieldByName('ID').Value := id;
+        DM.cdsCategoriasItensAgendados.FieldByName('NOME').Value := listas[i];
+        DM.cdsCategoriasItensAgendados.Post; //AfterPost ja grava o XML
+      end;
+
+      if (idAnterior <> '') then
+        DM.cdsCategoriasItensAgendados.Locate('ID', idAnterior, []);
+    finally
+      DM.cdsCategoriasItensAgendados.EnableControls;
+    end;
+  finally
+    listas.Free;
+  end;
+end;
+
+//Caminho absoluto do arquivo de um item agendado. ARQUIVO_INFO = 'I' significa
+//caminho relativo a pasta do programa.
+function TfmIndex.caminhoItemAgendado(const arquivo, info: string): string;
+begin
+  Result := trim(arquivo);
+  if (Result = '') then
+    Exit;
+  if (info = 'I') then
+    Result := diretorio(ExtractFilePath(Application.ExeName) + '\') + Result;
+end;
+
+//Datas da lista que ainda precisam ser baixadas (preenche "pendentes") e
+//quantidade de itens agendados cujo arquivo sumiu do disco (Result).
+//So considera episodios de hoje em diante.
+function TfmIndex.pendenciasAgendados(const categoria, idCategoria: string;
+  pendentes: TStringList): Integer;
+var
+  episodios: TEpisodiosAgendados;
+  i: Integer;
+  filtroAnterior, arquivo: string;
+  filtradoAnterior: Boolean;
+begin
+  uAgendados.dirConfigAgendados := dir_config;
+  Result := 0;
+  if Assigned(pendentes) then
+    pendentes.Clear;
+
+  if (trim(categoria) = '') or (trim(idCategoria) = '') then
+    Exit;
+  if not DM.cdsItensAgendadosClone.Active then
+    Exit;
+  if not leListaAgendados(categoria, episodios) then
+    Exit;
+
+  //O clone e usado de proposito: o cursor do dataset da lista que o usuario
+  //esta vendo nao pode se mexer. O filtro do calendario e restaurado no final.
+  filtradoAnterior := DM.cdsItensAgendadosClone.Filtered;
+  filtroAnterior := DM.cdsItensAgendadosClone.Filter;
+  DM.cdsItensAgendadosClone.DisableControls;
+  try
+    DM.cdsItensAgendadosClone.Filtered := False;
+    DM.cdsItensAgendadosClone.Filter := '';
+
+    for i := 0 to High(episodios) do
+    begin
+      if (episodios[i].Data < Date) then
+        Continue;
+
+      if not DM.cdsItensAgendadosClone.Locate('CATEGORIA;DATA',
+        VarArrayOf([idCategoria, episodios[i].Data]), []) then
+      begin
+        if Assigned(pendentes) then
+          pendentes.Add(FormatDateTime('yyyy-mm-dd', episodios[i].Data));
+        Continue;
+      end;
+
+      arquivo := caminhoItemAgendado(
+        DM.cdsItensAgendadosClone.FieldByName('ARQUIVO').AsString,
+        DM.cdsItensAgendadosClone.FieldByName('ARQUIVO_INFO').AsString);
+
+      if (arquivo = '') or FileExists(arquivo) then
+        Continue;
+
+      //Agendado, mas o arquivo sumiu. Se era download do programa da para
+      //baixar de novo; se era arquivo escolhido pelo usuario, so avisa.
+      if arquivoEhDownloadDoPrograma(categoria, arquivo) then
+      begin
+        if Assigned(pendentes) then
+          pendentes.Add(FormatDateTime('yyyy-mm-dd', episodios[i].Data));
+      end
+      else
+        Inc(Result);
+    end;
+  finally
+    DM.cdsItensAgendadosClone.Filter := filtroAnterior;
+    DM.cdsItensAgendadosClone.Filtered := filtradoAnterior;
+    DM.cdsItensAgendadosClone.EnableControls;
+  end;
+end;
+
+//Rodape da lista de itens agendados: botao de baixar, aviso de arquivo faltando
+//ou a informacao de que nao ha mais nada a baixar.
+procedure TfmIndex.atualizaRodapeAgendados;
+var
+  pendentes: TStringList;
+  semArquivo: Integer;
+begin
+  uAgendados.dirConfigAgendados := dir_config;
+
+  pnlAgendadosDownload.Visible := False;
+  btBaixarAgendados.Visible := False;
+  lbAgendadosInfo.Visible := False;
+  lbAgendadosAviso.Visible := False;
+
+  if (trim(categoriaAgendadaNome) = '') then
+    Exit;
+  if not categoriaTemLista(categoriaAgendadaNome) then
+    Exit;
+
+  pendentes := TStringList.Create;
+  try
+    semArquivo := pendenciasAgendados(categoriaAgendadaNome, txtCategoria.Text, pendentes);
+
+    if (pendentes.Count > 0) then
+    begin
+      btBaixarAgendados.Caption := 'Baixar todos os vídeos restantes (' +
+        IntToStr(pendentes.Count) + ')';
+      btBaixarAgendados.Visible := True;
+    end
+    else
+    begin
+      lbAgendadosInfo.Caption := 'Não há mais itens para baixar';
+      lbAgendadosInfo.Visible := True;
+    end;
+
+    if (semArquivo > 0) then
+    begin
+      if (semArquivo = 1) then
+        lbAgendadosAviso.Caption := '1 item agendado está com o arquivo faltando'
+      else
+        lbAgendadosAviso.Caption := IntToStr(semArquivo) +
+          ' itens agendados estão com o arquivo faltando';
+      lbAgendadosAviso.Visible := True;
+    end;
+
+    if lbAgendadosAviso.Visible then
+      pnlAgendadosDownload.Height := 74
+    else
+      pnlAgendadosDownload.Height := 46;
+
+    pnlAgendadosDownload.Visible := True;
+  finally
+    pendentes.Free;
+  end;
+end;
+
+//Cria (ou atualiza) o item agendado do episodio ja baixado.
+procedure TfmIndex.agendaEpisodioBaixado(const idCategoria: string;
+  const episodio: TEpisodioAgendado; const arquivo: string);
+var
+  info: TbsSkinEdit;
+  caminho, id: string;
+begin
+  info := TbsSkinEdit.Create(nil);
+  try
+    caminho := verificaURL(arquivo, info, False);
+
+    if DM.cdsItensAgendados.Locate('CATEGORIA;DATA',
+      VarArrayOf([idCategoria, episodio.Data]), []) then
+      DM.cdsItensAgendados.Edit
+    else
+    begin
+      id := FormatDateTime('ddmmyyyyhhnnsszzz', Now);
+      DM.cdsItensAgendados.Append;
+      DM.cdsItensAgendados.FieldByName('ID').Value := id;
+    end;
+
+    DM.cdsItensAgendados.FieldByName('CATEGORIA').Value := idCategoria;
+    DM.cdsItensAgendados.FieldByName('DATA').Value := episodio.Data;
+    DM.cdsItensAgendados.FieldByName('NOME').Value := ChangeFileExt(ExtractFileName(arquivo), '');
+    DM.cdsItensAgendados.FieldByName('ARQUIVO').Value := caminho;
+    DM.cdsItensAgendados.FieldByName('ARQUIVO_INFO').Value := info.Text;
+    DM.cdsItensAgendados.Post;
+  finally
+    info.Free;
+  end;
+end;
+
+procedure TfmIndex.btBaixarAgendadosClick(Sender: TObject);
+var
+  pendentes, urls, destinos: TStringList;
+  episodios: TEpisodiosAgendados;
+  i, j, indice, baixados: Integer;
+  falhas, categoria, idCategoria, destino: string;
+  cancelado: Boolean;
+begin
+  categoria := categoriaAgendadaNome;
+  idCategoria := txtCategoria.Text;
+  if (trim(categoria) = '') or (trim(idCategoria) = '') then
+    Exit;
+
+  pendentes := TStringList.Create;
+  urls := TStringList.Create;
+  destinos := TStringList.Create;
+  try
+    pendenciasAgendados(categoria, idCategoria, pendentes);
+    if (pendentes.Count = 0) then
+    begin
+      atualizaRodapeAgendados;
+      Exit;
+    end;
+
+    if (Application.MessageBox(PChar('Baixar ' + IntToStr(pendentes.Count) +
+      ' vídeo(s) de ' + categoria + '?'), TITULO, MB_YESNO + MB_ICONQUESTION) <> IDYES) then
+      Exit;
+
+    if not leListaAgendados(categoria, episodios) then
+      Exit;
+
+    for i := 0 to pendentes.Count - 1 do
+    begin
+      indice := -1;
+      for j := 0 to High(episodios) do
+        if (FormatDateTime('yyyy-mm-dd', episodios[j].Data) = pendentes[i]) then
+        begin
+          indice := j;
+          Break;
+        end;
+      if (indice < 0) then
+        Continue;
+
+      urls.Add(episodios[indice].URL);
+      destinos.Add(pastaDownloadsAgendados(categoria) +
+        nomeArquivoEpisodio(episodios[indice]));
+    end;
+
+    if (urls.Count = 0) then
+      Exit;
+
+    //Mesma tela da sincronizacao de arquivos, em modo download
+    fIniciando.AppCreateForm(TfAtualiza, fAtualiza);
+    fAtualiza.modo := maDownload;
+    fAtualiza.cancela := False;
+    fAtualiza.urls := urls;
+    fAtualiza.destinos := destinos;
+    fAtualiza.titulo_download := 'Baixando ' + categoria + '...';
+    fAtualiza.ShowModal;
+    cancelado := fAtualiza.cancela;
+
+    //So agenda o que chegou inteiro: arquivo ausente ou pequeno demais nao vira
+    //item agendado. Servidor fora do ar costuma devolver pagina de erro com
+    //nome de video.
+    baixados := 0;
+    falhas := '';
+    for i := 0 to destinos.Count - 1 do
+    begin
+      destino := destinos[i];
+
+      indice := -1;
+      for j := 0 to High(episodios) do
+        if SameText(pastaDownloadsAgendados(categoria) +
+          nomeArquivoEpisodio(episodios[j]), destino) then
+        begin
+          indice := j;
+          Break;
+        end;
+      if (indice < 0) then
+        Continue;
+
+      if not FileExists(destino) then
+      begin
+        if not cancelado then
+          falhas := falhas + FormatDateTime('dd/mm/yyyy', episodios[indice].Data) +
+            ': download não concluído' + #13#10;
+        Continue;
+      end;
+
+      if (FileSize(destino) < TAMANHO_MINIMO_DOWNLOAD) then
+      begin
+        DeleteFile(destino);
+        falhas := falhas + FormatDateTime('dd/mm/yyyy', episodios[indice].Data) +
+          ': o arquivo recebido é pequeno demais' + #13#10;
+        Continue;
+      end;
+
+      gravaNoManifesto(categoria, destino);
+      agendaEpisodioBaixado(idCategoria, episodios[indice], destino);
+      Inc(baixados);
+    end;
+
+    atualizaRodapeAgendados;
+
+    if cancelado then
+      Application.MessageBox(PChar('Download cancelado. ' + IntToStr(baixados) +
+        ' vídeo(s) baixado(s) e agendado(s).'), TITULO, MB_OK + MB_ICONINFORMATION)
+    else if (falhas <> '') then
+      Application.MessageBox(PChar(IntToStr(baixados) + ' vídeo(s) baixado(s).' +
+        #13#10#13#10 + 'Não foi possível baixar:' + #13#10 + falhas), TITULO,
+        MB_OK + MB_ICONWARNING)
+    else
+      Application.MessageBox(PChar(IntToStr(baixados) +
+        ' vídeo(s) baixado(s) e agendado(s).'), TITULO, MB_OK + MB_ICONINFORMATION);
+  finally
+    destinos.Free;
+    urls.Free;
+    pendentes.Free;
+  end;
+end;
+
+//True se algum outro item agendado aponta para o mesmo arquivo.
+function TfmIndex.outroItemUsaArquivo(const idItem, arquivo: string): Boolean;
+var
+  filtroAnterior, caminho: string;
+  filtradoAnterior: Boolean;
+begin
+  Result := False;
+  if (trim(arquivo) = '') or (not DM.cdsItensAgendadosClone.Active) then
+    Exit;
+
+  filtradoAnterior := DM.cdsItensAgendadosClone.Filtered;
+  filtroAnterior := DM.cdsItensAgendadosClone.Filter;
+  DM.cdsItensAgendadosClone.DisableControls;
+  try
+    DM.cdsItensAgendadosClone.Filtered := False;
+    DM.cdsItensAgendadosClone.Filter := '';
+    DM.cdsItensAgendadosClone.First;
+
+    while not DM.cdsItensAgendadosClone.Eof do
+    begin
+      if not SameText(DM.cdsItensAgendadosClone.FieldByName('ID').AsString, idItem) then
+      begin
+        caminho := caminhoItemAgendado(
+          DM.cdsItensAgendadosClone.FieldByName('ARQUIVO').AsString,
+          DM.cdsItensAgendadosClone.FieldByName('ARQUIVO_INFO').AsString);
+
+        if (caminho <> '') and
+           SameText(ExpandFileName(caminho), ExpandFileName(arquivo)) then
+        begin
+          Result := True;
+          Break;
+        end;
+      end;
+      DM.cdsItensAgendadosClone.Next;
+    end;
+  finally
+    DM.cdsItensAgendadosClone.Filter := filtroAnterior;
+    DM.cdsItensAgendadosClone.Filtered := filtradoAnterior;
+    DM.cdsItensAgendadosClone.EnableControls;
+  end;
+end;
+
+//Apaga do disco o arquivo do item agendado atual, e SOMENTE quando ele foi
+//baixado pelo programa. Tres travas, todas obrigatorias:
+//  1) esta na pasta de downloads da categoria
+//  2) consta no manifesto baixados.txt
+//  3) nenhum outro item agendado aponta para ele
+//Arquivo escolhido pelo usuario (video personalizado, por exemplo) nunca e
+//tocado: nesse caso so o registro e removido, como sempre foi.
+procedure TfmIndex.apagaArquivoDoItemAtualSePermitido;
+var
+  categoria, arquivo: string;
+begin
+  uAgendados.dirConfigAgendados := dir_config;
+
+  categoria := nomeCategoriaAgendada(
+    DM.cdsItensAgendados.FieldByName('CATEGORIA').AsString);
+  if (trim(categoria) = '') or (not categoriaTemLista(categoria)) then
+    Exit;
+
+  arquivo := caminhoItemAgendado(
+    DM.cdsItensAgendados.FieldByName('ARQUIVO').AsString,
+    DM.cdsItensAgendados.FieldByName('ARQUIVO_INFO').AsString);
+
+  if (arquivo = '') or (not FileExists(arquivo)) then
+    Exit;
+  if not arquivoEhDownloadDoPrograma(categoria, arquivo) then
+    Exit;
+  if not constaNoManifesto(categoria, arquivo) then
+    Exit;
+  if outroItemUsaArquivo(DM.cdsItensAgendados.FieldByName('ID').AsString, arquivo) then
+    Exit;
+
+  if DeleteFile(arquivo) then
+    removeDoManifesto(categoria, arquivo);
+end;
+
 
 
 function TfmIndex.RemoveTags(const s: string): string;
@@ -10456,12 +10934,14 @@ begin
   end;
 
   txtCategoria.Text := DM.cdsCategoriasItensAgendados.FieldByName('ID').AsString;
+  categoriaAgendadaNome := DM.cdsCategoriasItensAgendados.FieldByName('NOME').AsString;
   DM.cdsItensAgendados.Filtered := true;
   DM.cdsItensAgendados.Filter := 'CATEGORIA = '''+txtCategoria.Text+'''';
   pnlItensAgendados.Visible := True;
   dbctrlItensAgendados.RowCount := Trunc(dbctrlItensAgendados.ClientHeight / 60);
   dbctrlItensAgendados.ColCount := 1;
 
+  atualizaRodapeAgendados;
   refreshCalendar();
 end;
 
@@ -15467,6 +15947,7 @@ begin
     fItensAgendados.tipo := 'ITEM';
     fItensAgendados.ShowModal;
     loadCol.Strings.Values['LITURGIA'] := '';
+    atualizaRodapeAgendados;
     Exit;
   end;
 
@@ -15488,6 +15969,7 @@ begin
     refreshCalendar;
   end;
   loadCol.Strings.Values['LITURGIA'] := '';
+  atualizaRodapeAgendados;
 end;
 
 procedure TfmIndex.MonthCalendar1GetMonthInfo(Sender: TObject; Month: Cardinal;
