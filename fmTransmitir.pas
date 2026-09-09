@@ -88,7 +88,6 @@ type
     { Private declarations }
     tentativaConexao: Integer;
     function IsAllowedExternalSljaUrl(const AUrl: string): Boolean;
-    function IsAllowedLocalSljaPath(const APath: string): Boolean;
     function ExternalCacheDir: string;
     function CacheFileForUrl(const AUrl: string): string;
 
@@ -662,48 +661,6 @@ begin
   Result := True;
 end;
 
-function TfTransmitir.IsAllowedLocalSljaPath(const APath: string): Boolean;
-var
-  ext: string;
-  expanded: string;
-begin
-  Result := False;
-  expanded := Trim(APath);
-  if expanded = '' then
-    Exit;
-
-  // Strip optional file:/// prefix from browsers
-  if expanded.StartsWith('file:///', True) then
-    Delete(expanded, 1, 8)
-  else if expanded.StartsWith('file://', True) then
-    Delete(expanded, 1, 7);
-
-  expanded := StringReplace(expanded, '/', '\', [rfReplaceAll]);
-  expanded := ExpandFileName(expanded);
-
-  // Must be an absolute Windows path (C:\... or \\server\share\...)
-  if (Length(expanded) < 3) then
-    Exit;
-  if not (
-      ((expanded[2] = ':') and (expanded[3] = '\')) or
-      expanded.StartsWith('\\')
-     ) then
-    Exit;
-
-  // Block obvious traversal leftovers after ExpandFileName
-  if Pos('\..\', expanded) > 0 then
-    Exit;
-
-  ext := LowerCase(ExtractFileExt(expanded));
-  if (ext <> '.slja') and (ext <> '.lja') then
-    Exit;
-
-  if not FileExists(expanded) then
-    Exit;
-
-  Result := True;
-end;
-
 function TfTransmitir.ExternalCacheDir: string;
 begin
   Result := fmIndex.dir_temp + 'open_ext_cache\';
@@ -713,7 +670,11 @@ end;
 
 function TfTransmitir.CacheFileForUrl(const AUrl: string): string;
 begin
-  // Stable key so the same remote URL reuses the downloaded .slja
+  // Cache key = MD5(full URL including query). Callers MUST version the URL
+  // when slide content changes (content hash and/or updated_at), e.g.:
+  //   https://cdn.example.com/songs/123/slides-a1b2c3d4.slja
+  //   https://cdn.example.com/songs/123/slides.slja?v=20260830T120000
+  // Same URL ⇒ reuse disk cache; new URL ⇒ automatic re-download.
   Result := ExternalCacheDir +
     LowerCase(THashMD5.GetHashString(AUrl)) + '.slja';
 end;
@@ -740,7 +701,6 @@ var
   jsonResult: String;
   primeiro: Boolean;
   externalUrl: string;
-  externalPath: string;
   forceRefresh: Boolean;
   openSource: string;
 begin
@@ -1134,69 +1094,27 @@ begin
       Exit;
     end;
 
-    // API: Open an external LouvorJA presentation (.slja / .lja)
-    // Modes:
-    //   1) Local file (no download) — localhost only:
-    //      GET /api/open-external?path=C:\folder\song.slja
-    //   2) Remote HTTPS URL with disk cache:
-    //      GET /api/open-external?url=https://cdn.example.com/song.slja
-    //      Optional: &refresh=1 to force re-download
+    // API: Open a remote LouvorJA presentation (.slja) with disk cache
+    //   GET /api/open-external?url=https://cdn.example.com/song.slja
+    //   Optional: &refresh=1 to force re-download (bypass cache)
+    //
+    // Freshness contract: cache key is MD5(full URL). Callers (e.g. SDA)
+    // MUST change the URL when slide content changes — content hash in the
+    // path and/or updated_at / version query param. Do not overwrite bytes
+    // at a stable URL and expect the cache to notice.
     // LAN requests require ?token= (same as other /api/*)
     if arq = '/api/open-external' then
     begin
-      externalPath := Trim(ARequestInfo.Params.Values['path']);
       externalUrl := Trim(ARequestInfo.Params.Values['url']);
       forceRefresh :=
         (ARequestInfo.Params.Values['refresh'] = '1') or
         SameText(ARequestInfo.Params.Values['refresh'], 'true');
 
-      // --- Mode 1: local path (never download) ---
-      if externalPath <> '' then
-      begin
-        // Opening arbitrary local files from the LAN would be dangerous
-        if not isLocalRequest then
-        begin
-          AResponseInfo.ResponseNo := 403;
-          AResponseInfo.ContentText :=
-            '{"status":"error","message":"path= is only allowed from localhost","code":"PATH_LOCALHOST_ONLY"}';
-          Exit;
-        end;
-
-        if not IsAllowedLocalSljaPath(externalPath) then
-        begin
-          AResponseInfo.ResponseNo := 400;
-          AResponseInfo.ContentText :=
-            '{"status":"error","message":"Invalid or missing local .slja/.lja path","code":"INVALID_PATH"}';
-          Exit;
-        end;
-
-        // Normalize for processaArquivo (strip file://, expand)
-        if externalPath.StartsWith('file:///', True) then
-          Delete(externalPath, 1, 8)
-        else if externalPath.StartsWith('file://', True) then
-          Delete(externalPath, 1, 7);
-        externalPath := StringReplace(externalPath, '/', '\', [rfReplaceAll]);
-        externalPath := ExpandFileName(externalPath);
-
-        TThread.Queue(nil,
-          procedure
-          begin
-            if Assigned(fmIndex) then
-              fmIndex.processaArquivo(externalPath);
-          end
-        );
-
-        AResponseInfo.ContentText :=
-          '{"status":"ok","action":"open-external","source":"local"}';
-        Exit;
-      end;
-
-      // --- Mode 2: remote URL (+ cache) ---
       if externalUrl = '' then
       begin
         AResponseInfo.ResponseNo := 400;
         AResponseInfo.ContentText :=
-          '{"status":"error","message":"Missing url or path. Usage: /api/open-external?url=https://.../file.slja OR /api/open-external?path=C:\\file.slja","code":"MISSING_URL"}';
+          '{"status":"error","message":"Missing url. Usage: /api/open-external?url=https://.../file.slja (version the URL when content changes)","code":"MISSING_URL"}';
         Exit;
       end;
 
