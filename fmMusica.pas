@@ -577,6 +577,9 @@ begin
 
     musica := StringReplace(musica,'/', '\', [rfIgnoreCase, rfReplaceAll]);
     musica := StringReplace(musica,'\\', '\', [rfIgnoreCase, rfReplaceAll]);
+    //Transicao mp3 -> opus: se o .opus ainda nao foi baixado mas existe o
+    //.mp3 de mesmo nome, toca o mp3
+    musica := fmIndex.audioComAlternativaMp3(musica);
     if (Trim(musica) = '') then audio := false;
 
     if (audio) and not (FileExists(musica)) then

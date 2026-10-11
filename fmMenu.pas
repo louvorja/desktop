@@ -2305,6 +2305,7 @@ type
 
     //Suporte a arquivos .opus (add-on do BASS)
     procedure carregaPluginsBass;
+    function audioComAlternativaMp3(const caminho: string): string;
 
   end;
 
@@ -3252,6 +3253,7 @@ begin
     DM.qrMUSICA.Close;
   end;
   musica := dir_config+'musicas\'+album+'\'+url;
+  musica := audioComAlternativaMp3(musica);
   if not (FileExists(musica)) then
   begin
     if (application.MessageBox(PChar('Arquivo "'+musica+'" não encontrado! Deseja baixar este arquivo agora?'), fmIndex.titulo, mb_yesno + mb_iconerror) = 6) then
@@ -4628,6 +4630,30 @@ begin
   DM.cdsItensAgendados.Filter := filter;
 end;
 
+
+//Transicao do MP3 para o Opus.
+//
+//Quando o banco passar a apontar arquivos .opus, quem ja tem a biblioteca em
+//.mp3 da versao anterior nao precisa baixar tudo de novo: se o .opus ainda nao
+//esta no disco mas existe o .mp3 de mesmo nome, o mp3 serve.
+//
+//Devolve o caminho que deve ser usado. Quando nenhum dos dois existe, devolve
+//o caminho original, para quem chamou oferecer o download do .opus.
+function TfmIndex.audioComAlternativaMp3(const caminho: string): string;
+var
+  alternativo: string;
+begin
+  Result := caminho;
+
+  if (trim(caminho) = '') or FileExists(caminho) then
+    Exit;
+  if not SameText(ExtractFileExt(caminho), '.opus') then
+    Exit;
+
+  alternativo := ChangeFileExt(caminho, '.mp3');
+  if FileExists(alternativo) then
+    Result := alternativo;
+end;
 
 //Carrega os add-ons do BASS que estiverem na pasta do programa. O BASS nao
 //decodifica Opus sozinho: precisa do bassopus.dll. Com o add-on carregado, o
@@ -9980,6 +10006,7 @@ begin
         if (musica <> '') then
         begin
           musica := diretorio(ExtractFilePath(Application.ExeName)+'\config\musicas\'+musica);
+          musica := audioComAlternativaMp3(musica);
           Memo1.Lines.Add(musica);
           if (mus) then
           begin
@@ -10048,6 +10075,7 @@ begin
         if (musica <> '') then
         begin
           musica := diretorio(ExtractFilePath(Application.ExeName)+'\config\musicas\'+musica);
+          musica := audioComAlternativaMp3(musica);
           Memo1.Lines.Add(musica);
           if (mus) then
           begin
@@ -14528,6 +14556,7 @@ var
   ZipFile: TZipFile;
   arq: string;
   arq_e: string;
+  arq_o: string;
   imgList: TStringList;
 begin
   url := saveDialog('arquivo', 'Apresentação LouvorJA (*.slja)|*.slja','','','',trim(nome)+'.slja');
@@ -14561,10 +14590,11 @@ begin
           begin
             if Trim(DM.qrSLIDE_MUSICA.FieldByName('URL_MUSICA_PB').AsString) <> '' then
             begin
-              arq_e := dir_config+'musicas\'+DM.qrSLIDE_MUSICA.FieldByName('URL_MUSICA_PB').AsString;
-              arq_e := StringReplace(arq_e,'/', '\', [rfIgnoreCase, rfReplaceAll]);
+              //Transicao mp3 -> opus: empacota o arquivo que existe no disco
+              arq_o := audioComAlternativaMp3(dir_config+'musicas\'+DM.qrSLIDE_MUSICA.FieldByName('URL_MUSICA_PB').AsString);
+              arq_e := StringReplace(arq_o,'/', '\', [rfIgnoreCase, rfReplaceAll]);
               arq_e := 'audio\'+ExtractFileName(arq_e);
-              ZipFile.Add(dir_config+'musicas\'+DM.qrSLIDE_MUSICA.FieldByName('URL_MUSICA_PB').AsString,arq_e);
+              ZipFile.Add(arq_o,arq_e);
               arquivo.writeString('Geral', 'url_musica', arq_e);
             end
             else
@@ -14577,10 +14607,11 @@ begin
           begin
             if Trim(DM.qrSLIDE_MUSICA.FieldByName('URL_MUSICA').AsString) <> '' then
             begin
-              arq_e := dir_config+'musicas\'+DM.qrSLIDE_MUSICA.FieldByName('URL_MUSICA').AsString;
-              arq_e := StringReplace(arq_e,'/', '\', [rfIgnoreCase, rfReplaceAll]);
+              //Transicao mp3 -> opus: empacota o arquivo que existe no disco
+              arq_o := audioComAlternativaMp3(dir_config+'musicas\'+DM.qrSLIDE_MUSICA.FieldByName('URL_MUSICA').AsString);
+              arq_e := StringReplace(arq_o,'/', '\', [rfIgnoreCase, rfReplaceAll]);
               arq_e := 'audio\'+ExtractFileName(arq_e);
-              ZipFile.Add(dir_config+'musicas\'+DM.qrSLIDE_MUSICA.FieldByName('URL_MUSICA').AsString,arq_e);
+              ZipFile.Add(arq_o,arq_e);
               arquivo.writeString('Geral', 'url_musica', arq_e);
             end;
           end;
@@ -15183,7 +15214,7 @@ begin
           end;
           try
             carregaPluginsBass;
-            bass_musica := BASS_SampleLoad(FALSE, PChar(cds.FieldByName('URL_MUSICA').AsString), 0, 0, 3, BASS_SAMPLE_OVER_POS or BASS_UNICODE);
+            bass_musica := BASS_SampleLoad(FALSE, PChar(audioComAlternativaMp3(cds.FieldByName('URL_MUSICA').AsString)), 0, 0, 3, BASS_SAMPLE_OVER_POS or BASS_UNICODE);
             bass_channel := BASS_SampleGetChannel(bass_musica, False);
             if not BASS_ChannelPlay(bass_channel, False) then
             begin
