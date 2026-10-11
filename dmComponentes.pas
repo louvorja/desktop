@@ -430,6 +430,12 @@ begin
     Exit;
   end;
 
+  if (fmIndex.origemPlayer = 'BASS') then
+  begin
+    fmIndex.playerBassTick(Sender);
+    Exit;
+  end;
+
   fmIndex.pbPlayer.Value := fmIndex.MediaPlayer1.Position;
   if fmIndex.MediaPlayer1.Position >= fmIndex.MediaPlayer1.Length
     then fmIndex.btplFecharClick(Sender);

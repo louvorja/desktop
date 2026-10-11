@@ -2213,6 +2213,7 @@ type
     { Private declarations }
     //Add-ons do BASS ja carregados? Ver carregaPluginsBass
     plugins_bass_carregados: Boolean;
+    bass_player: HSTREAM;
     move_x,move_y:integer;
     move_panel: TPanel;
     move: Boolean;
@@ -2306,6 +2307,9 @@ type
     //Suporte a arquivos .opus (add-on do BASS)
     procedure carregaPluginsBass;
     function audioComAlternativaMp3(const caminho: string): string;
+    procedure playerBass(url: string);
+    procedure fechaPlayerBass;
+    procedure playerBassTick(Sender: TObject);
 
   end;
 
@@ -3610,13 +3614,14 @@ begin
   if url <> '' then
   begin
     gravaLog('Abrindo arquivo: '+url);
-    ext := (ExtractFileExt(url));
+    ext := LowerCase(ExtractFileExt(url));
     if externo
       then ShellExecute(handle, nil, PChar(url), nil, nil, SW_MAXIMIZE)
     else if (ext = '.slja') or (ext = '.lja')
       then processaArquivo(url, sairSeInvalido)
     else if (ckPlayerAudio.Checked)
-      and ((ext = '.mp3') or (ext = '.wma') or (ext = '.wav')) then
+      and ((ext = '.mp3') or (ext = '.wma') or (ext = '.wav')
+        or (ext = '.opus')) then
     begin
       player(url,false);
     end
@@ -4630,6 +4635,73 @@ begin
   DM.cdsItensAgendados.Filter := filter;
 end;
 
+
+procedure TfmIndex.playerBass(url: string);
+var
+  total: QWORD;
+begin
+  if (origemPlayer <> '') then
+    btplFecharClick(nil);
+  fechaPlayerBass;
+
+  carregaPluginsBass;
+
+  try
+    BASS_Init(-1, 44100, 0, Handle, nil);
+  except
+  end;
+
+  bass_player := BASS_StreamCreateFile(False, PChar(url), 0, 0, BASS_UNICODE);
+  if (bass_player = 0) then
+  begin
+    gravaLog('Player interno: o BASS nao abriu ' + url + ' (erro ' +
+      IntToStr(BASS_ErrorGetCode) + ')');
+    abrirArquivo(url, True);
+    Exit;
+  end;
+
+  origemPlayer := 'BASS';
+  lblPlayer.Caption := 'Reproduzindo: ' + ExtractFileName(url);
+  pnlPlayer.Visible := True;
+
+  total := BASS_ChannelGetLength(bass_player, BASS_POS_BYTE);
+  pbPlayer.MaxValue := Round(BASS_ChannelBytes2Seconds(bass_player, total) * 1000);
+  pbPlayer.Value := 0;
+
+  BASS_ChannelPlay(bass_player, False);
+  btplPlay.Down := True;
+  btplPause.Down := False;
+
+  DM.tmrPlayer.Interval := 250;
+  DM.tmrPlayer.Enabled := True;
+end;
+
+procedure TfmIndex.fechaPlayerBass;
+begin
+  if (bass_player = 0) then
+    Exit;
+
+  BASS_ChannelStop(bass_player);
+  BASS_StreamFree(bass_player);
+  bass_player := 0;
+end;
+
+procedure TfmIndex.playerBassTick(Sender: TObject);
+var
+  posicao: QWORD;
+begin
+  if (bass_player = 0) then
+  begin
+    btplFecharClick(Sender);
+    Exit;
+  end;
+
+  posicao := BASS_ChannelGetPosition(bass_player, BASS_POS_BYTE);
+  pbPlayer.Value := Round(BASS_ChannelBytes2Seconds(bass_player, posicao) * 1000);
+
+  if (BASS_ChannelIsActive(bass_player) = BASS_ACTIVE_STOPPED) then
+    btplFecharClick(Sender);
+end;
 
 //Transicao do MP3 para o Opus.
 //
@@ -8808,6 +8880,16 @@ begin
     Exit;
   end;
 
+  if (origemPlayer = 'BASS') then
+  begin
+    if (bass_player <> 0) then
+      BASS_ChannelSetPosition(bass_player,
+        BASS_ChannelSeconds2Bytes(bass_player, newPosition / 1000), BASS_POS_BYTE);
+    pbPlayer.Value := newPosition;
+    DM.tmrPlayer.Enabled := True;
+    Exit;
+  end;
+
 //  MediaPlayer1.Pause;
   MediaPlayer1.Position := newPosition;
   DM.tmrPlayer.Enabled := True;
@@ -8885,6 +8967,8 @@ begin
   if (fPlayer <> nil) then
     fPlayer.Close;
 
+  fechaPlayerBass;
+
   if (video) then
   begin
       monitor := strtoint(lerParam('Player', 'Monitor', '2'));
@@ -8912,6 +8996,12 @@ begin
 
     fadeJanela(fPlayer, 255);
     fPlayer.Caption := ExtractFileName(url);
+  end;
+
+  if (not video) and SameText(ExtractFileExt(url), '.opus') then
+  begin
+    playerBass(url);
+    Exit;
   end;
 
   try
@@ -9270,9 +9360,10 @@ end;
 
 procedure TfmIndex.btplFecharClick(Sender: TObject);
 var
-  eraYoutube: Boolean;
+  eraYoutube, eraBass: Boolean;
 begin
   eraYoutube := (origemPlayer = 'YOUTUBE');
+  eraBass := (origemPlayer = 'BASS');
   origemPlayer := '';
 
   pnlPlayer.Visible := False;
@@ -9286,6 +9377,12 @@ begin
     //reprodução; o MediaPlayer1 não está envolvido
     if (fVideoOn <> nil) and (fVideoOn.Visible) then
       fVideoOn.Close;
+    Exit;
+  end;
+
+  if (eraBass) then
+  begin
+    fechaPlayerBass;
     Exit;
   end;
 
@@ -9313,6 +9410,11 @@ begin
     if (fVideoOn <> nil) then
       fVideoOn.pausa;
   end
+  else if (origemPlayer = 'BASS') then
+  begin
+    if (bass_player <> 0) then
+      BASS_ChannelPause(bass_player);
+  end
   else
     MediaPlayer1.Pause;
 
@@ -9331,6 +9433,11 @@ begin
   begin
     if (fVideoOn <> nil) then
       fVideoOn.reproduz;
+  end
+  else if (origemPlayer = 'BASS') then
+  begin
+    if (bass_player <> 0) then
+      BASS_ChannelPlay(bass_player, False);
   end
   else
     MediaPlayer1.Play;
