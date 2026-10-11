@@ -3,6 +3,7 @@
 !components/MonitorInfoView/*.exe
 !components/CnWizards/*.exe
 *.dll
+!components/bass24/bassopus.dll
 *.bpl
 *.bpi
 *.dcp

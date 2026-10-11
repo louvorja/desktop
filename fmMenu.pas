@@ -2211,6 +2211,8 @@ type
     procedure RestartApplication;
   private
     { Private declarations }
+    //Add-ons do BASS ja carregados? Ver carregaPluginsBass
+    plugins_bass_carregados: Boolean;
     move_x,move_y:integer;
     move_panel: TPanel;
     move: Boolean;
@@ -2300,6 +2302,9 @@ type
     senha_bd: string;
 
     externo: Boolean;
+
+    //Suporte a arquivos .opus (add-on do BASS)
+    procedure carregaPluginsBass;
 
   end;
 
@@ -4623,6 +4628,28 @@ begin
   DM.cdsItensAgendados.Filter := filter;
 end;
 
+
+//Carrega os add-ons do BASS que estiverem na pasta do programa. O BASS nao
+//decodifica Opus sozinho: precisa do bassopus.dll. Com o add-on carregado, o
+//BASS_SampleLoad passa a aceitar .opus sem nenhuma outra mudanca, e a posicao
+//continua sendo deslocamento em bytes no sample em memoria.
+//Idempotente: so tenta carregar uma vez por execucao.
+procedure TfmIndex.carregaPluginsBass;
+var
+  arquivo: string;
+begin
+  if plugins_bass_carregados then
+    Exit;
+  plugins_bass_carregados := True;
+
+  arquivo := ExtractFilePath(Application.ExeName) + 'bassopus.dll';
+  if not FileExists(arquivo) then
+    Exit;
+
+  if (BASS_PluginLoad(PChar(arquivo), BASS_UNICODE) = 0) then
+    gravaLog('Nao foi possivel carregar o bassopus.dll (erro ' +
+      IntToStr(BASS_ErrorGetCode) + '). Arquivos .opus nao serao reproduzidos.');
+end;
 
 function TfmIndex.RemoveTags(const s: string): string;
 var
@@ -9965,6 +9992,7 @@ begin
           except
             //
           end;
+          carregaPluginsBass;
           bass_musica := BASS_SampleLoad(FALSE, PChar(musica), 0, 0, 3, BASS_SAMPLE_OVER_POS or BASS_UNICODE);
           bass_channel := BASS_SampleGetChannel(bass_musica, False);
           if not BASS_ChannelPlay(bass_channel, False) then
@@ -10032,6 +10060,7 @@ begin
           except
             //
           end;
+          carregaPluginsBass;
           bass_musica := BASS_SampleLoad(FALSE, PChar(musica), 0, 0, 3, BASS_SAMPLE_OVER_POS or BASS_UNICODE);
           bass_channel := BASS_SampleGetChannel(bass_musica, False);
           if not BASS_ChannelPlay(bass_channel, False) then
@@ -15153,6 +15182,7 @@ begin
             //
           end;
           try
+            carregaPluginsBass;
             bass_musica := BASS_SampleLoad(FALSE, PChar(cds.FieldByName('URL_MUSICA').AsString), 0, 0, 3, BASS_SAMPLE_OVER_POS or BASS_UNICODE);
             bass_channel := BASS_SampleGetChannel(bass_musica, False);
             if not BASS_ChannelPlay(bass_channel, False) then
