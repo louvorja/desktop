@@ -87,6 +87,12 @@ type
   private
     { Private declarations }
     tentativaConexao: Integer;
+    function IsAllowedExternalSljaUrl(const AUrl: string): Boolean;
+    function IsPublicHostname(const AHost: string): Boolean;
+    function ExternalCacheDir: string;
+    function CacheFileForUrl(const AUrl: string): string;
+    function DownloadExternalSlja(const AUrl, ADest: string;
+      MaxBytes: Int64): Boolean;
 
     // ====================================================================
     // API v2 - declarações
@@ -207,7 +213,8 @@ implementation
 
 uses
   fmMusica, fmMenu, fmQRCode, dmComponentes, fmMonitorSorteio, fmVideoOn, Vcl.MPlayer,
-  System.SyncObjs, System.StrUtils, System.IOUtils, IdURI, IdGlobal;
+  System.SyncObjs, System.StrUtils, System.IOUtils, System.Hash, IdURI, IdGlobal,
+  IdStack, Winapi.WinInet;
 
 // ── Enumeração de interfaces de rede (iphlpapi) ─────────────────────────────
 
@@ -578,6 +585,239 @@ begin
     Result := Result + CHARS[Random(Length(CHARS)) + 1];
 end;
 
+function TfTransmitir.IsPublicHostname(const AHost: string): Boolean;
+var
+  host, resolved: string;
+  parts: TArray<string>;
+  a, b, c, d, i: Integer;
+  onlyDigits: Boolean;
+begin
+  Result := False;
+  host := LowerCase(Trim(AHost));
+  if (host = '') or (host = 'localhost') or (host = '::1') then
+    Exit;
+  if host.EndsWith('.local') or host.EndsWith('.localhost') then
+    Exit;
+
+  // Hostname CDN URLs only — reject IP literals (dotted, hex, decimal, IPv6)
+  if (Length(host) > 0) and (host[1] = '[') then
+    Exit;
+  if host.StartsWith('0x') then
+    Exit;
+  onlyDigits := True;
+  for i := 1 to Length(host) do
+    if not CharInSet(host[i], ['0'..'9']) then
+    begin
+      onlyDigits := False;
+      Break;
+    end;
+  if onlyDigits then
+    Exit;
+
+  parts := host.Split(['.']);
+  if Length(parts) = 4 then
+  begin
+    a := StrToIntDef(parts[0], -1);
+    b := StrToIntDef(parts[1], -1);
+    c := StrToIntDef(parts[2], -1);
+    d := StrToIntDef(parts[3], -1);
+    if (a >= 0) and (b >= 0) and (c >= 0) and (d >= 0) and
+       (a <= 255) and (b <= 255) and (c <= 255) and (d <= 255) and
+       (parts[0] <> '') and (parts[1] <> '') and (parts[2] <> '') and (parts[3] <> '') then
+      Exit; // dotted-quad literal — require DNS names only
+  end;
+
+  // Resolve and reject non-public destinations (DNS rebinding / private CNAME)
+  try
+    resolved := GStack.ResolveHost(host);
+  except
+    Exit;
+  end;
+  resolved := LowerCase(Trim(resolved));
+  if (resolved = '') or (resolved = '0.0.0.0') or (resolved = '::') or
+     (resolved = '::1') then
+    Exit;
+  if resolved.StartsWith('127.') or resolved.StartsWith('0.') or
+     resolved.StartsWith('10.') or resolved.StartsWith('192.168.') or
+     resolved.StartsWith('169.254.') then
+    Exit;
+  if resolved.StartsWith('172.') then
+  begin
+    parts := resolved.Split(['.']);
+    if Length(parts) >= 2 then
+    begin
+      b := StrToIntDef(parts[1], -1);
+      if (b >= 16) and (b <= 31) then
+        Exit;
+    end;
+  end;
+  if (Pos(':', resolved) > 0) then
+  begin
+    // IPv6: allow only if clearly not ULA/link-local/loopback prefixes
+    if resolved.StartsWith('fc') or resolved.StartsWith('fd') or
+       resolved.StartsWith('fe80') or resolved.StartsWith('::ffff:127.') or
+       resolved.StartsWith('::ffff:10.') or resolved.StartsWith('::ffff:192.168.') then
+      Exit;
+  end;
+
+  Result := True;
+end;
+
+function TfTransmitir.IsAllowedExternalSljaUrl(const AUrl: string): Boolean;
+var
+  s, host, pathPart: string;
+  p: Integer;
+begin
+  Result := False;
+  s := Trim(AUrl);
+  if s = '' then
+    Exit;
+
+  // HTTPS only — avoids cleartext and most local-file tricks
+  if not s.StartsWith('https://', True) then
+    Exit;
+
+  Delete(s, 1, 8); // strip https://
+
+  // Reject credentials in URL (user:pass@host)
+  if Pos('@', s) > 0 then
+    Exit;
+
+  p := Pos('/', s);
+  if p > 0 then
+  begin
+    host := Copy(s, 1, p - 1);
+    pathPart := Copy(s, p, MaxInt);
+  end
+  else
+  begin
+    host := s;
+    pathPart := '';
+  end;
+
+  // Strip query/fragment from path before extension check
+  p := Pos('?', pathPart);
+  if p > 0 then
+    pathPart := Copy(pathPart, 1, p - 1);
+  p := Pos('#', pathPart);
+  if p > 0 then
+    pathPart := Copy(pathPart, 1, p - 1);
+
+  if not pathPart.ToLower.EndsWith('.slja') then
+    Exit;
+
+  // Strip port from host
+  p := Pos(':', host);
+  if p > 0 then
+    host := Copy(host, 1, p - 1);
+
+  if not IsPublicHostname(host) then
+    Exit;
+
+  Result := True;
+end;
+
+function TfTransmitir.ExternalCacheDir: string;
+begin
+  Result := fmIndex.dir_temp + 'open_ext_cache\';
+  if not DirectoryExists(Result) then
+    ForceDirectories(Result);
+end;
+
+function TfTransmitir.CacheFileForUrl(const AUrl: string): string;
+begin
+  // Cache key = MD5(full URL including query). Callers MUST version the URL
+  // when slide content changes (content hash and/or updated_at), e.g.:
+  //   https://cdn.example.com/songs/123/slides-a1b2c3d4.slja
+  //   https://cdn.example.com/songs/123/slides.slja?v=20260830T120000
+  // Same URL ⇒ reuse disk cache; new URL ⇒ automatic re-download.
+  Result := ExternalCacheDir +
+    LowerCase(THashMD5.GetHashString(AUrl)) + '.slja';
+end;
+
+function TfTransmitir.DownloadExternalSlja(const AUrl, ADest: string;
+  MaxBytes: Int64): Boolean;
+const
+  BufferSize = 8192;
+  // Do not follow redirects — final hop would bypass IsAllowedExternalSljaUrl
+  OpenFlags = INTERNET_FLAG_NO_AUTO_REDIRECT or INTERNET_FLAG_RELOAD or
+    INTERNET_FLAG_NO_CACHE_WRITE;
+var
+  hSession, hURL: HInternet;
+  Buffer: array[0..BufferSize - 1] of Byte;
+  BufferLen: DWORD;
+  f: file;
+  sAppName: string;
+  statusBuf: array[0..15] of Char;
+  statusLen: DWORD;
+  statusCode: Integer;
+  idx: DWORD;
+  total: Int64;
+  okOpen: Boolean;
+begin
+  Result := False;
+  if (Trim(AUrl) = '') or (Trim(ADest) = '') or (MaxBytes <= 0) then
+    Exit;
+
+  sAppName := ExtractFileName(Application.ExeName);
+  hSession := InternetOpen(PChar(sAppName), INTERNET_OPEN_TYPE_PRECONFIG, nil, nil, 0);
+  if hSession = nil then
+    Exit;
+  try
+    hURL := InternetOpenURL(hSession, PChar(AUrl), nil, 0, OpenFlags, 0);
+    if hURL = nil then
+      Exit;
+    try
+      statusLen := SizeOf(statusBuf);
+      idx := 0;
+      if not HttpQueryInfo(hURL, HTTP_QUERY_STATUS_CODE, @statusBuf[0], statusLen, idx) then
+        Exit;
+      statusCode := StrToIntDef(statusBuf, 0);
+      if (statusCode < 200) or (statusCode > 299) then
+        Exit;
+
+      AssignFile(f, ADest);
+      Rewrite(f, 1);
+      okOpen := True;
+      total := 0;
+      try
+        repeat
+          BufferLen := 0;
+          if not InternetReadFile(hURL, @Buffer[0], SizeOf(Buffer), BufferLen) then
+          begin
+            okOpen := False;
+            Break;
+          end;
+          if BufferLen = 0 then
+            Break;
+          total := total + BufferLen;
+          if total > MaxBytes then
+          begin
+            okOpen := False;
+            Break;
+          end;
+          BlockWrite(f, Buffer[0], BufferLen);
+        until False;
+      finally
+        CloseFile(f);
+      end;
+
+      if (not okOpen) or (total <= 0) then
+      begin
+        if FileExists(ADest) then
+          DeleteFile(ADest);
+        Exit;
+      end;
+
+      Result := True;
+    finally
+      InternetCloseHandle(hURL);
+    end;
+  finally
+    InternetCloseHandle(hSession);
+  end;
+end;
+
 procedure TfTransmitir.IdHTTPServer1CommandGet(AContext: TIdContext;
   ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
 var
@@ -599,6 +839,9 @@ var
   searchTerm: String;
   jsonResult: String;
   primeiro: Boolean;
+  externalUrl: string;
+  forceRefresh: Boolean;
+  openSource: string;
 begin
   // A v2 é atendida por um bloco próprio, no fim desta unit. Quando ela
   // responde, nada daqui para baixo é executado.
@@ -986,6 +1229,116 @@ begin
         AResponseInfo.ResponseNo := 400;
         AResponseInfo.ContentText :=
           '{"status":"error","message":"Missing or invalid song ID. Usage example: /api/open-song?id=123","code":"MISSING_ID"}';
+      end;
+      Exit;
+    end;
+
+    // API: Open a remote LouvorJA presentation (.slja) with disk cache
+    //   GET /api/open-external?url=https://cdn.example.com/song.slja
+    //   Optional: &refresh=1 to force re-download (bypass cache)
+    //
+    // Freshness contract: cache key is MD5(full URL). Callers (e.g. SDA)
+    // MUST change the URL when slide content changes — content hash in the
+    // path and/or updated_at / version query param. Do not overwrite bytes
+    // at a stable URL and expect the cache to notice.
+    // LAN requests require ?token= (same as other /api/*)
+    if arq = '/api/open-external' then
+    begin
+      externalUrl := Trim(ARequestInfo.Params.Values['url']);
+      forceRefresh :=
+        (ARequestInfo.Params.Values['refresh'] = '1') or
+        SameText(ARequestInfo.Params.Values['refresh'], 'true');
+
+      if externalUrl = '' then
+      begin
+        AResponseInfo.ResponseNo := 400;
+        AResponseInfo.ContentText :=
+          '{"status":"error","message":"Missing url. Usage: /api/open-external?url=https://.../file.slja (version the URL when content changes)","code":"MISSING_URL"}';
+        Exit;
+      end;
+
+      if not IsAllowedExternalSljaUrl(externalUrl) then
+      begin
+        AResponseInfo.ResponseNo := 400;
+        AResponseInfo.ContentText :=
+          '{"status":"error","message":"Invalid or disallowed url. Only HTTPS URLs ending in .slja from public hosts are accepted","code":"INVALID_URL"}';
+        Exit;
+      end;
+
+      if (not forceRefresh) and FileExists(CacheFileForUrl(externalUrl)) then
+        openSource := 'cache'
+      else
+        openSource := 'download';
+
+      if openSource = 'cache' then
+      begin
+        // Cache hit: only UI work — same fire-and-forget pattern as open-song
+        TThread.Queue(nil,
+          procedure
+          var
+            dest: string;
+          begin
+            if not Assigned(fmIndex) then
+              Exit;
+            dest := CacheFileForUrl(externalUrl);
+            if FileExists(dest) then
+              fmIndex.processaArquivo(dest);
+          end
+        );
+        AResponseInfo.ContentText :=
+          '{"status":"accepted","action":"open-external","source":"cache"}';
+      end
+      else
+      begin
+        // Download off the UI thread; open on UI after a successful write.
+        // Unique .part name avoids concurrent same-URL clobbering.
+        TThread.CreateAnonymousThread(
+          procedure
+          const
+            MaxBytes = 50 * 1024 * 1024; // 50 MB
+          var
+            dest: string;
+            tmp: string;
+            ok: Boolean;
+          begin
+            if not Assigned(fmIndex) then
+              Exit;
+
+            dest := CacheFileForUrl(externalUrl);
+            // Keep a .slja extension: processaArquivo rejects non-.slja/.lja names
+            tmp := dest + '.' + FormatDateTime('yyyymmddhhnnsszzz', Now) +
+              '-' + IntToStr(Random(MaxInt)) + '.slja';
+
+            ok := False;
+            try
+              ok := DownloadExternalSlja(externalUrl, tmp, MaxBytes);
+            except
+              ok := False;
+            end;
+
+            if ok and FileExists(tmp) then
+            begin
+              if FileExists(dest) then
+                DeleteFile(dest);
+              if not RenameFile(tmp, dest) then
+                dest := tmp; // fallback if rename fails (file locked)
+
+              // Synchronize (not Queue): keep dest alive until UI open finishes
+              TThread.Synchronize(nil,
+                procedure
+                begin
+                  if Assigned(fmIndex) and FileExists(dest) then
+                    fmIndex.processaArquivo(dest);
+                end
+              );
+            end
+            else if FileExists(tmp) then
+              DeleteFile(tmp);
+          end
+        ).Start;
+
+        AResponseInfo.ContentText :=
+          '{"status":"accepted","action":"open-external","source":"download"}';
       end;
       Exit;
     end;
