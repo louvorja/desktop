@@ -251,6 +251,7 @@
         <DCCReference Include="components\DelphiZXingQRCode\DelphiZXingQRCode.pas"/>
         <DCCReference Include="fmQRCode.pas"/>
         <DCCReference Include="uInstanciaUnica.pas"/>
+        <DCCReference Include="uAgendados.pas"/>
         <BuildConfiguration Include="Release">
             <Key>Cfg_2</Key>
             <CfgParent>Base</CfgParent>

@@ -42,7 +42,8 @@ uses
   fmCopiaLiturgiaDia in 'fmCopiaLiturgiaDia.pas',
   DelphiZXingQRCode in 'components\DelphiZXingQRCode\DelphiZXingQRCode.pas',
   fmQRCode in 'fmQRCode.pas',
-  uInstanciaUnica in 'uInstanciaUnica.pas';
+  uInstanciaUnica in 'uInstanciaUnica.pas',
+  uAgendados in 'uAgendados.pas';
 
 {$R *.res}
 
