@@ -577,6 +577,9 @@ begin
 
     musica := StringReplace(musica,'/', '\', [rfIgnoreCase, rfReplaceAll]);
     musica := StringReplace(musica,'\\', '\', [rfIgnoreCase, rfReplaceAll]);
+    //Transicao mp3 -> opus: se o .opus ainda nao foi baixado mas existe o
+    //.mp3 de mesmo nome, toca o mp3
+    musica := fmIndex.audioComAlternativaMp3(musica);
     if (Trim(musica) = '') then audio := false;
 
     if (audio) and not (FileExists(musica)) then
@@ -627,6 +630,7 @@ begin
 
       f := PChar(musica);
       try
+        fmIndex.carregaPluginsBass;
         bass_musica := BASS_SampleLoad(FALSE, PChar(f), 0, 0, 3, BASS_SAMPLE_OVER_POS or BASS_UNICODE);
         bass_channel := BASS_SampleGetChannel(bass_musica, False);
   //      BASS_ChannelSetAttribute(bass_channel, BASS_ATTRIB_PAN, 0);

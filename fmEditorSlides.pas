@@ -1027,6 +1027,7 @@ begin
 
   f := PChar(musica);
   try
+    fmIndex.carregaPluginsBass;
     bass_musica := BASS_SampleLoad(FALSE, PChar(f), 0, 0, 3, BASS_SAMPLE_OVER_POS or BASS_UNICODE);
     bass_channel := BASS_SampleGetChannel(bass_musica, False);
 //      BASS_ChannelSetAttribute(bass_channel, BASS_ATTRIB_PAN, 0);

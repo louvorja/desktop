@@ -2211,6 +2211,9 @@ type
     procedure RestartApplication;
   private
     { Private declarations }
+    //Add-ons do BASS ja carregados? Ver carregaPluginsBass
+    plugins_bass_carregados: Boolean;
+    bass_player: HSTREAM;
     move_x,move_y:integer;
     move_panel: TPanel;
     move: Boolean;
@@ -2300,6 +2303,13 @@ type
     senha_bd: string;
 
     externo: Boolean;
+
+    //Suporte a arquivos .opus (add-on do BASS)
+    procedure carregaPluginsBass;
+    function audioComAlternativaMp3(const caminho: string): string;
+    procedure playerBass(url: string);
+    procedure fechaPlayerBass;
+    procedure playerBassTick(Sender: TObject);
 
   end;
 
@@ -3247,6 +3257,7 @@ begin
     DM.qrMUSICA.Close;
   end;
   musica := dir_config+'musicas\'+album+'\'+url;
+  musica := audioComAlternativaMp3(musica);
   if not (FileExists(musica)) then
   begin
     if (application.MessageBox(PChar('Arquivo "'+musica+'" não encontrado! Deseja baixar este arquivo agora?'), fmIndex.titulo, mb_yesno + mb_iconerror) = 6) then
@@ -3603,13 +3614,14 @@ begin
   if url <> '' then
   begin
     gravaLog('Abrindo arquivo: '+url);
-    ext := (ExtractFileExt(url));
+    ext := LowerCase(ExtractFileExt(url));
     if externo
       then ShellExecute(handle, nil, PChar(url), nil, nil, SW_MAXIMIZE)
     else if (ext = '.slja') or (ext = '.lja')
       then processaArquivo(url, sairSeInvalido)
     else if (ckPlayerAudio.Checked)
-      and ((ext = '.mp3') or (ext = '.wma') or (ext = '.wav')) then
+      and ((ext = '.mp3') or (ext = '.wma') or (ext = '.wav')
+        or (ext = '.opus')) then
     begin
       player(url,false);
     end
@@ -4623,6 +4635,119 @@ begin
   DM.cdsItensAgendados.Filter := filter;
 end;
 
+
+procedure TfmIndex.playerBass(url: string);
+var
+  total: QWORD;
+begin
+  if (origemPlayer <> '') then
+    btplFecharClick(nil);
+  fechaPlayerBass;
+
+  carregaPluginsBass;
+
+  try
+    BASS_Init(-1, 44100, 0, Handle, nil);
+  except
+  end;
+
+  bass_player := BASS_StreamCreateFile(False, PChar(url), 0, 0, BASS_UNICODE);
+  if (bass_player = 0) then
+  begin
+    gravaLog('Player interno: o BASS nao abriu ' + url + ' (erro ' +
+      IntToStr(BASS_ErrorGetCode) + ')');
+    abrirArquivo(url, True);
+    Exit;
+  end;
+
+  origemPlayer := 'BASS';
+  lblPlayer.Caption := 'Reproduzindo: ' + ExtractFileName(url);
+  pnlPlayer.Visible := True;
+
+  total := BASS_ChannelGetLength(bass_player, BASS_POS_BYTE);
+  pbPlayer.MaxValue := Round(BASS_ChannelBytes2Seconds(bass_player, total) * 1000);
+  pbPlayer.Value := 0;
+
+  BASS_ChannelPlay(bass_player, False);
+  btplPlay.Down := True;
+  btplPause.Down := False;
+
+  DM.tmrPlayer.Interval := 250;
+  DM.tmrPlayer.Enabled := True;
+end;
+
+procedure TfmIndex.fechaPlayerBass;
+begin
+  if (bass_player = 0) then
+    Exit;
+
+  BASS_ChannelStop(bass_player);
+  BASS_StreamFree(bass_player);
+  bass_player := 0;
+end;
+
+procedure TfmIndex.playerBassTick(Sender: TObject);
+var
+  posicao: QWORD;
+begin
+  if (bass_player = 0) then
+  begin
+    btplFecharClick(Sender);
+    Exit;
+  end;
+
+  posicao := BASS_ChannelGetPosition(bass_player, BASS_POS_BYTE);
+  pbPlayer.Value := Round(BASS_ChannelBytes2Seconds(bass_player, posicao) * 1000);
+
+  if (BASS_ChannelIsActive(bass_player) = BASS_ACTIVE_STOPPED) then
+    btplFecharClick(Sender);
+end;
+
+//Transicao do MP3 para o Opus.
+//
+//Quando o banco passar a apontar arquivos .opus, quem ja tem a biblioteca em
+//.mp3 da versao anterior nao precisa baixar tudo de novo: se o .opus ainda nao
+//esta no disco mas existe o .mp3 de mesmo nome, o mp3 serve.
+//
+//Devolve o caminho que deve ser usado. Quando nenhum dos dois existe, devolve
+//o caminho original, para quem chamou oferecer o download do .opus.
+function TfmIndex.audioComAlternativaMp3(const caminho: string): string;
+var
+  alternativo: string;
+begin
+  Result := caminho;
+
+  if (trim(caminho) = '') or FileExists(caminho) then
+    Exit;
+  if not SameText(ExtractFileExt(caminho), '.opus') then
+    Exit;
+
+  alternativo := ChangeFileExt(caminho, '.mp3');
+  if FileExists(alternativo) then
+    Result := alternativo;
+end;
+
+//Carrega os add-ons do BASS que estiverem na pasta do programa. O BASS nao
+//decodifica Opus sozinho: precisa do bassopus.dll. Com o add-on carregado, o
+//BASS_SampleLoad passa a aceitar .opus sem nenhuma outra mudanca, e a posicao
+//continua sendo deslocamento em bytes no sample em memoria.
+//Idempotente: so tenta carregar uma vez por execucao.
+procedure TfmIndex.carregaPluginsBass;
+var
+  arquivo: string;
+begin
+  if plugins_bass_carregados then
+    Exit;
+  plugins_bass_carregados := True;
+
+  arquivo := ExtractFilePath(Application.ExeName) + 'bassopus.dll';
+  if not FileExists(arquivo) then
+    Exit;
+
+  if (BASS_PluginLoad(PChar(arquivo), BASS_UNICODE) = 0) then
+    gravaLog('Nao foi possivel carregar o bassopus.dll (erro ' +
+      IntToStr(BASS_ErrorGetCode) + '). Arquivos .opus nao serao reproduzidos.');
+end;
 
 function TfmIndex.RemoveTags(const s: string): string;
 var
@@ -8755,6 +8880,16 @@ begin
     Exit;
   end;
 
+  if (origemPlayer = 'BASS') then
+  begin
+    if (bass_player <> 0) then
+      BASS_ChannelSetPosition(bass_player,
+        BASS_ChannelSeconds2Bytes(bass_player, newPosition / 1000), BASS_POS_BYTE);
+    pbPlayer.Value := newPosition;
+    DM.tmrPlayer.Enabled := True;
+    Exit;
+  end;
+
 //  MediaPlayer1.Pause;
   MediaPlayer1.Position := newPosition;
   DM.tmrPlayer.Enabled := True;
@@ -8832,6 +8967,8 @@ begin
   if (fPlayer <> nil) then
     fPlayer.Close;
 
+  fechaPlayerBass;
+
   if (video) then
   begin
       monitor := strtoint(lerParam('Player', 'Monitor', '2'));
@@ -8859,6 +8996,12 @@ begin
 
     fadeJanela(fPlayer, 255);
     fPlayer.Caption := ExtractFileName(url);
+  end;
+
+  if (not video) and SameText(ExtractFileExt(url), '.opus') then
+  begin
+    playerBass(url);
+    Exit;
   end;
 
   try
@@ -9217,9 +9360,10 @@ end;
 
 procedure TfmIndex.btplFecharClick(Sender: TObject);
 var
-  eraYoutube: Boolean;
+  eraYoutube, eraBass: Boolean;
 begin
   eraYoutube := (origemPlayer = 'YOUTUBE');
+  eraBass := (origemPlayer = 'BASS');
   origemPlayer := '';
 
   pnlPlayer.Visible := False;
@@ -9233,6 +9377,12 @@ begin
     //reprodução; o MediaPlayer1 não está envolvido
     if (fVideoOn <> nil) and (fVideoOn.Visible) then
       fVideoOn.Close;
+    Exit;
+  end;
+
+  if (eraBass) then
+  begin
+    fechaPlayerBass;
     Exit;
   end;
 
@@ -9260,6 +9410,11 @@ begin
     if (fVideoOn <> nil) then
       fVideoOn.pausa;
   end
+  else if (origemPlayer = 'BASS') then
+  begin
+    if (bass_player <> 0) then
+      BASS_ChannelPause(bass_player);
+  end
   else
     MediaPlayer1.Pause;
 
@@ -9278,6 +9433,11 @@ begin
   begin
     if (fVideoOn <> nil) then
       fVideoOn.reproduz;
+  end
+  else if (origemPlayer = 'BASS') then
+  begin
+    if (bass_player <> 0) then
+      BASS_ChannelPlay(bass_player, False);
   end
   else
     MediaPlayer1.Play;
@@ -9953,6 +10113,7 @@ begin
         if (musica <> '') then
         begin
           musica := diretorio(ExtractFilePath(Application.ExeName)+'\config\musicas\'+musica);
+          musica := audioComAlternativaMp3(musica);
           Memo1.Lines.Add(musica);
           if (mus) then
           begin
@@ -9965,6 +10126,7 @@ begin
           except
             //
           end;
+          carregaPluginsBass;
           bass_musica := BASS_SampleLoad(FALSE, PChar(musica), 0, 0, 3, BASS_SAMPLE_OVER_POS or BASS_UNICODE);
           bass_channel := BASS_SampleGetChannel(bass_musica, False);
           if not BASS_ChannelPlay(bass_channel, False) then
@@ -10020,6 +10182,7 @@ begin
         if (musica <> '') then
         begin
           musica := diretorio(ExtractFilePath(Application.ExeName)+'\config\musicas\'+musica);
+          musica := audioComAlternativaMp3(musica);
           Memo1.Lines.Add(musica);
           if (mus) then
           begin
@@ -10032,6 +10195,7 @@ begin
           except
             //
           end;
+          carregaPluginsBass;
           bass_musica := BASS_SampleLoad(FALSE, PChar(musica), 0, 0, 3, BASS_SAMPLE_OVER_POS or BASS_UNICODE);
           bass_channel := BASS_SampleGetChannel(bass_musica, False);
           if not BASS_ChannelPlay(bass_channel, False) then
@@ -14499,6 +14663,7 @@ var
   ZipFile: TZipFile;
   arq: string;
   arq_e: string;
+  arq_o: string;
   imgList: TStringList;
 begin
   url := saveDialog('arquivo', 'Apresentação LouvorJA (*.slja)|*.slja','','','',trim(nome)+'.slja');
@@ -14532,10 +14697,11 @@ begin
           begin
             if Trim(DM.qrSLIDE_MUSICA.FieldByName('URL_MUSICA_PB').AsString) <> '' then
             begin
-              arq_e := dir_config+'musicas\'+DM.qrSLIDE_MUSICA.FieldByName('URL_MUSICA_PB').AsString;
-              arq_e := StringReplace(arq_e,'/', '\', [rfIgnoreCase, rfReplaceAll]);
+              //Transicao mp3 -> opus: empacota o arquivo que existe no disco
+              arq_o := audioComAlternativaMp3(dir_config+'musicas\'+DM.qrSLIDE_MUSICA.FieldByName('URL_MUSICA_PB').AsString);
+              arq_e := StringReplace(arq_o,'/', '\', [rfIgnoreCase, rfReplaceAll]);
               arq_e := 'audio\'+ExtractFileName(arq_e);
-              ZipFile.Add(dir_config+'musicas\'+DM.qrSLIDE_MUSICA.FieldByName('URL_MUSICA_PB').AsString,arq_e);
+              ZipFile.Add(arq_o,arq_e);
               arquivo.writeString('Geral', 'url_musica', arq_e);
             end
             else
@@ -14548,10 +14714,11 @@ begin
           begin
             if Trim(DM.qrSLIDE_MUSICA.FieldByName('URL_MUSICA').AsString) <> '' then
             begin
-              arq_e := dir_config+'musicas\'+DM.qrSLIDE_MUSICA.FieldByName('URL_MUSICA').AsString;
-              arq_e := StringReplace(arq_e,'/', '\', [rfIgnoreCase, rfReplaceAll]);
+              //Transicao mp3 -> opus: empacota o arquivo que existe no disco
+              arq_o := audioComAlternativaMp3(dir_config+'musicas\'+DM.qrSLIDE_MUSICA.FieldByName('URL_MUSICA').AsString);
+              arq_e := StringReplace(arq_o,'/', '\', [rfIgnoreCase, rfReplaceAll]);
               arq_e := 'audio\'+ExtractFileName(arq_e);
-              ZipFile.Add(dir_config+'musicas\'+DM.qrSLIDE_MUSICA.FieldByName('URL_MUSICA').AsString,arq_e);
+              ZipFile.Add(arq_o,arq_e);
               arquivo.writeString('Geral', 'url_musica', arq_e);
             end;
           end;
@@ -15153,7 +15320,8 @@ begin
             //
           end;
           try
-            bass_musica := BASS_SampleLoad(FALSE, PChar(cds.FieldByName('URL_MUSICA').AsString), 0, 0, 3, BASS_SAMPLE_OVER_POS or BASS_UNICODE);
+            carregaPluginsBass;
+            bass_musica := BASS_SampleLoad(FALSE, PChar(audioComAlternativaMp3(cds.FieldByName('URL_MUSICA').AsString)), 0, 0, 3, BASS_SAMPLE_OVER_POS or BASS_UNICODE);
             bass_channel := BASS_SampleGetChannel(bass_musica, False);
             if not BASS_ChannelPlay(bass_channel, False) then
             begin

@@ -198,7 +198,8 @@ var
   existe: Boolean;
   a_sim,a_nao: Integer;
   tamanho: Longint;
-  url: string;
+  url, completo: string;
+  usa_mp3: Boolean;
 begin
   gpBotoes.Visible := False;
 
@@ -222,7 +223,18 @@ begin
       url := StringReplace(url,'config\',fIniciando.paramexec.Strings.Values['dir_config']+'\',[rfIgnoreCase, rfReplaceAll]);
 //      showmessage(url);
     lblStatus.Caption := 'Verificando... '+inttostr(DM.qrARQUIVOS_SISTEMA.RecNo)+' / '+inttostr(DM.qrARQUIVOS_SISTEMA.RecordCount);
-    existe := (FileExists(ExtractFilePath(application.ExeName)+'/'+url));
+    completo := ExtractFilePath(application.ExeName)+'/'+url;
+    existe := FileExists(completo);
+
+    //Transicao mp3 -> opus: quem ja tem o .mp3 de mesmo nome nao precisa
+    //baixar o .opus. O TAMANHO do registro e o do opus, entao nesse caso
+    //nao faz sentido conferir o tamanho do arquivo.
+    usa_mp3 := False;
+    if not existe then
+    begin
+      usa_mp3 := (fmIndex.audioComAlternativaMp3(completo) <> completo);
+      existe := usa_mp3;
+    end;
 
     if not existe then
     begin
@@ -233,6 +245,8 @@ begin
       a_nao := a_nao + 1;
       Item.SubItems.Add('Não encontrado');
     end
+    else if usa_mp3 then
+      a_sim := a_sim + 1
     else if (DM.qrARQUIVOS_SISTEMA.FieldByName('TAMANHO').AsInteger > 0) then
     begin
       tamanho := fmIndex.FileSize(url);
