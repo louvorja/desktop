@@ -1684,6 +1684,7 @@ type
     function isFolderEmpty(szPath: string): Boolean;
     function IsNumeric(S: string): boolean;
     function verVersao():Boolean;
+    function bancoTemColunaDownload: Boolean;
     procedure tsSorteioShow(Sender: TObject);
     procedure tsCronometroShow(Sender: TObject);
     procedure tsCronoCultoShow(Sender: TObject);
@@ -4904,6 +4905,11 @@ begin
     Params := Params + ' "' + ParamStr(I) + '"';
   end;
 
+  try
+    DM.ADO.Connected := False;
+  except
+  end;
+
   //Solta o mutex antes de relançar, senão a nova cópia se recusa a abrir
   LiberaInstanciaUnica;
 
@@ -6370,6 +6376,25 @@ begin
   apagaParam('Config', 'Imagem Fundo Info');
 end;
 
+function TfmIndex.bancoTemColunaDownload: Boolean;
+var
+  campos: TStringList;
+begin
+  Result := False;
+
+  campos := TStringList.Create;
+  try
+    try
+      DM.ADO.GetFieldNames('', '', 'ARQUIVOS_SISTEMA', '', campos);
+      Result := campos.IndexOf('URL_DOWNLOAD') >= 0;
+    except
+      Result := False;
+    end;
+  finally
+    campos.Free;
+  end;
+end;
+
 function TfmIndex.verVersao():Boolean;
 var
   versao_atu: TStringList;
@@ -6377,6 +6402,8 @@ var
   param_versao: String;
   lista: TStringList;
   Flags: Cardinal;
+  faltaColuna: Boolean;
+  pergunta: string;
 begin
   DM.qrVERSAO.Close;
   DM.qrVERSAO.Open;
@@ -6424,6 +6451,11 @@ begin
       end;
     end;
 
+    try
+      DM.ADO.Connected := False;
+    except
+    end;
+
     //Solta o mutex antes de relançar, senão a nova cópia se recusa a abrir
     LiberaInstanciaUnica;
 
@@ -6467,17 +6499,24 @@ begin
 
 
 
-  if (Trim(param.Strings.Values['db_version']) = '') then
+  if (Trim(param.Strings.Values['https_db_version']) = '') then
   begin
     Result := false;
     Exit;
   end;
 
-  if (DM.qrVERSAO.fieldbyname('VERSAO_BD').AsInteger < StrToInt(param.Strings.Values['db_version'])) then
+  faltaColuna := not bancoTemColunaDownload;
+
+  if (DM.qrVERSAO.fieldbyname('VERSAO_BD').AsInteger < StrToInt(param.Strings.Values['https_db_version']))
+     or faltaColuna then
   begin
     Result := false;
 
-    if (application.messagebox(PChar(fIniciando.Translate('Uma versão mais recente do banco de dados foi encontrada. Deseja baixar agora?')), TITULO, MB_yesno + mb_iconquestion) <> 6) then
+    if faltaColuna
+      then pergunta := 'O banco de dados precisa ser atualizado para o programa conseguir baixar arquivos. Deseja baixar agora?'
+      else pergunta := 'Uma versão mais recente do banco de dados foi encontrada. Deseja baixar agora?';
+
+    if (application.messagebox(PChar(fIniciando.Translate(pergunta)), TITULO, MB_yesno + mb_iconquestion) <> 6) then
     begin
       Result := false;
       Exit;
@@ -6504,6 +6543,18 @@ begin
         Result := false;
         Exit;
       end;
+
+      if faltaColuna and (fAtualiza.arquivos_falha.Count > 0) then
+      begin
+        application.messagebox(PChar(fIniciando.Translate('Não foi possível atualizar o banco de dados. O programa seguirá funcionando, mas não conseguirá baixar arquivos.')), TITULO, MB_ok + mb_iconerror);
+        Result := false;
+        Exit;
+      end;
+    end;
+
+    try
+      DM.ADO.Connected := False;
+    except
     end;
 
     //Solta o mutex antes de relançar, senão a nova cópia se recusa a abrir
@@ -16964,6 +17015,11 @@ begin
       begin
         CopyFile(PChar(arq),PChar(dir_dados+ExtractFileName(arq)),false);
         application.MessageBox('Arquivo importado com sucesso!'+#13#10+'O sistema será reiniciado para que as novas configurações tenham efeito!',TITULO,mb_ok+mb_iconinformation);
+
+        try
+          DM.ADO.Connected := False;
+        except
+        end;
 
         //Solta o mutex antes de relançar, senão a nova cópia se recusa a abrir
         LiberaInstanciaUnica;

@@ -354,18 +354,6 @@ object fAtualiza: TfAtualiza
       AutoSize = False
     end
   end
-  object ftp: TValueListEditor
-    Left = 0
-    Top = 0
-    Width = 128
-    Height = 122
-    Align = alLeft
-    TabOrder = 0
-    Visible = False
-    ColWidths = (
-      59
-      63)
-  end
   object bsBusinessSkinForm1: TbsBusinessSkinForm
     UseRibbon = False
     ShowMDIScrollBars = True
@@ -440,22 +428,6 @@ object fAtualiza: TfAtualiza
     BorderIcons = []
     Left = 230
     Top = 12
-  end
-  object IdFTP1: TIdFTP
-    OnDisconnected = IdFTP1Disconnected
-    OnWork = IdFTP1Work
-    OnWorkBegin = IdFTP1WorkBegin
-    OnWorkEnd = IdFTP1WorkEnd
-    IPVersion = Id_IPv4
-    ConnectTimeout = 0
-    TransferType = ftBinary
-    NATKeepAlive.UseKeepAlive = False
-    NATKeepAlive.IdleTimeMS = 0
-    NATKeepAlive.IntervalMS = 0
-    ProxySettings.ProxyType = fpcmNone
-    ProxySettings.Port = 0
-    Left = 280
-    Top = 8
   end
   object tmrFecha: TTimer
     Enabled = False
