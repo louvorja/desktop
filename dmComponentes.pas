@@ -366,21 +366,14 @@ procedure TDM.tmrMediaPlayerTimer(Sender: TObject);
 begin
   with fmIndex do
   begin
-    try
-      if (mpMusica.Position >= mpMusica.Length) then
-      begin
-        mpMusica.Stop;
-        btOuvir.Caption := 'Ouvir';
-        btOuvir.Down := False;
-        btOuvir.ImageIndex := 7;
-        tmrMediaPlayer.Enabled := false;
-      end;
-    except
-      btOuvir.Caption := 'Ouvir';
-      btOuvir.Down := False;
-      btOuvir.ImageIndex := 7;
-      tmrMediaPlayer.Enabled := false;
-    end;
+    if audioESTocando then
+      Exit;
+
+    paraAudioES;
+    btOuvir.Caption := 'Ouvir';
+    btOuvir.Down := False;
+    btOuvir.ImageIndex := 7;
+    tmrMediaPlayer.Enabled := false;
   end;
 end;
 

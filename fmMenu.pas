@@ -54,7 +54,6 @@ type
     tsBiblia: TbsSkinTabSheet;
     tsBuscaBiblica: TbsSkinTabSheet;
     tsCronoCulto: TbsSkinTabSheet;
-    mpMusica: TMediaPlayer;
     tsSorteio: TbsSkinTabSheet;
     pnlSorteio: TPanel;
     lmdSorteio: TLabel;
@@ -2214,6 +2213,8 @@ type
     //Add-ons do BASS ja carregados? Ver carregaPluginsBass
     plugins_bass_carregados: Boolean;
     bass_player: HSTREAM;
+    bass_escsb: HSTREAM;
+    arquivo_escsb: string;
     move_x,move_y:integer;
     move_panel: TPanel;
     move: Boolean;
@@ -2310,6 +2311,11 @@ type
     procedure playerBass(url: string);
     procedure fechaPlayerBass;
     procedure playerBassTick(Sender: TObject);
+
+    //Audio da Escola Sabatina (abertura, 5 minutos e 1 minuto)
+    function tocaAudioES: Boolean;
+    procedure paraAudioES;
+    function audioESTocando: Boolean;
 
   end;
 
@@ -7323,11 +7329,7 @@ end;
 
 procedure TfmIndex.cbMusicaChange(Sender: TObject);
 begin
-  try
-    mpMusica.Stop;
-  except
-    //
-  end;
+  paraAudioES;
   btOuvir.Caption := 'Ouvir';
   btOuvir.Down := False;
   btOuvir.ImageIndex := 7;
@@ -7492,21 +7494,72 @@ begin
   Result := texto;
 end;
 
+function TfmIndex.tocaAudioES: Boolean;
+begin
+  Result := False;
+  paraAudioES;
+
+  if (trim(arquivo_escsb) = '') or (not FileExists(arquivo_escsb)) then
+  begin
+    gravaLog('Audio da Escola Sabatina nao encontrado: ' + arquivo_escsb);
+    Exit;
+  end;
+
+  carregaPluginsBass;
+
+  try
+    BASS_Init(-1, 44100, 0, Handle, nil);
+  except
+  end;
+
+  bass_escsb := BASS_StreamCreateFile(False, PChar(arquivo_escsb), 0, 0,
+    BASS_UNICODE);
+  if (bass_escsb = 0) then
+  begin
+    gravaLog('O BASS nao abriu ' + arquivo_escsb + ' (erro ' +
+      IntToStr(BASS_ErrorGetCode) + ')');
+    Exit;
+  end;
+
+  if not BASS_ChannelPlay(bass_escsb, False) then
+  begin
+    gravaLog('O BASS nao reproduziu ' + arquivo_escsb + ' (erro ' +
+      IntToStr(BASS_ErrorGetCode) + ')');
+    paraAudioES;
+    Exit;
+  end;
+
+  Result := True;
+end;
+
+procedure TfmIndex.paraAudioES;
+begin
+  if (bass_escsb = 0) then
+    Exit;
+
+  BASS_ChannelStop(bass_escsb);
+  BASS_StreamFree(bass_escsb);
+  bass_escsb := 0;
+end;
+
+//Outro ponto do programa pode ter chamado BASS_Free e levado o canal junto.
+//Com o handle invalido o BASS responde como parado, que e o que interessa aqui.
+function TfmIndex.audioESTocando: Boolean;
+begin
+  Result := (bass_escsb <> 0) and
+    (BASS_ChannelIsActive(bass_escsb) = BASS_ACTIVE_PLAYING);
+end;
+
 procedure TfmIndex.selMusica;
 begin
   if not rbgAudioES.Visible then Exit;
 
   if (cbMusica.ItemIndex = 0) then
-    mpMusica.FileName := dir_config + 'abertura_escsb.mp3'
+    arquivo_escsb := dir_config + 'abertura_escsb.mp3'
   else if (cbMusica.ItemIndex = 1) then
-    mpMusica.FileName := dir_config + '5minutos_escsb.mp3'
+    arquivo_escsb := dir_config + '5minutos_escsb.mp3'
   else
-    mpMusica.FileName := dir_config + '1minuto_escsb.mp3';
-  try
-    mpMusica.Open;
-  except
-    //
-  end;
+    arquivo_escsb := dir_config + '1minuto_escsb.mp3';
 end;
 
 function TfmIndex.maiorLista(L: string): string;
@@ -8740,17 +8793,19 @@ begin
   selMusica();
   if btOuvir.Caption = 'Ouvir' then
   begin
-    try
-      DM.tmrMediaPlayer.Enabled := true;
-      mpMusica.Play;
-    except
+    if not tocaAudioES then
+    begin
       DM.tmrMediaPlayer.Enabled := false;
       btOuvir.Caption := 'Ouvir';
       btOuvir.Down := False;
       btOuvir.ImageIndex := 7;
-      abrirArquivo(mpMusica.FileName,true);
+      abrirArquivo(arquivo_escsb,true);
       Exit;
     end;
+
+    //So depois que o audio esta tocando: ligado antes, o tick podia entrar
+    //no meio da abertura do arquivo
+    DM.tmrMediaPlayer.Enabled := true;
     btOuvir.Caption := 'Parar';
     btOuvir.Down := True;
     btOuvir.ImageIndex := 9;
@@ -8758,11 +8813,7 @@ begin
   else
   begin
     DM.tmrMediaPlayer.Enabled := false;
-    try
-      mpMusica.Stop;
-    except
-      //
-    end;
+    paraAudioES;
     btOuvir.Caption := 'Ouvir';
     btOuvir.Down := False;
     btOuvir.ImageIndex := 7;
@@ -8775,11 +8826,7 @@ var
 begin
   if btLigar.Caption = 'Ligar' then
   begin
-    try
-      mpMusica.Stop;
-    except
-      //
-    end;
+    paraAudioES;
 
     fmt.ShortDateFormat:='dd/mm/yyyy';
     fmt.DateSeparator  :='/';
@@ -8832,11 +8879,7 @@ begin
     gEscSbR.MaxValue := 1;
     gEscSbR.Value := 1;
 
-    try
-      mpMusica.Stop;
-    except
-      //
-    end;
+    paraAudioES;
     DM.tmrMediaPlayer.Enabled := false;
     btOuvir.Caption := 'Ouvir';
     btOuvir.Down := False;
@@ -9461,11 +9504,7 @@ begin
   if (Sender <> nil) and (not TbsSkinSpeedButton(Sender).Enabled) then Exit;
 
   t := TComponent(Sender).Tag;
-  try
-    mpMusica.Stop;
-  except
-    //
-  end;
+  paraAudioES;
   tEscSBCrono := IncMinute(tEscSBCrono,t);
   DM.tmrRelogioTimer(Sender);
 end;
@@ -12900,11 +12939,7 @@ begin
 
   if (rbgAudioES.Visible) and (tEscSBCrono > agora) and (formatdatetime('hh:mm:ss', crono) = '00:05:10') and (cgEscSBAudio.ItemChecked[1]) then
   begin
-    try
-      mpMusica.Stop;
-    except
-      //
-    end;
+    paraAudioES;
     btOuvir.Caption := 'Ouvir';
     btOuvir.Down := False;
     btOuvir.ImageIndex := 7;
@@ -12915,11 +12950,7 @@ begin
   end;
   if (rbgAudioES.Visible) and (tEscSBCrono > agora) and (formatdatetime('hh:mm:ss', crono) = '00:01:10') and (cgEscSBAudio.ItemChecked[2]) then
   begin
-    try
-      mpMusica.Stop;
-    except
-      //
-    end;
+    paraAudioES;
     btOuvir.Caption := 'Ouvir';
     btOuvir.Down := False;
     btOuvir.ImageIndex := 7;
