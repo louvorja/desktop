@@ -2308,6 +2308,7 @@ type
     //Suporte a arquivos .opus (add-on do BASS)
     procedure carregaPluginsBass;
     function audioComAlternativaMp3(const caminho: string): string;
+    function audioSuportadoPeloBass(const url: string): Boolean;
     procedure playerBass(url: string);
     procedure fechaPlayerBass;
     procedure playerBassTick(Sender: TObject);
@@ -4731,6 +4732,16 @@ begin
   alternativo := ChangeFileExt(caminho, '.mp3');
   if FileExists(alternativo) then
     Result := alternativo;
+end;
+
+//O .wma fica de fora porque o BASS so o decodifica com o basswma.dll,
+//que o programa nao distribui. Video nunca passa por aqui.
+function TfmIndex.audioSuportadoPeloBass(const url: string): Boolean;
+var
+  ext: string;
+begin
+  ext := LowerCase(ExtractFileExt(url));
+  Result := (ext = '.mp3') or (ext = '.wav') or (ext = '.opus');
 end;
 
 //Carrega os add-ons do BASS que estiverem na pasta do programa. O BASS nao
@@ -9041,7 +9052,7 @@ begin
     fPlayer.Caption := ExtractFileName(url);
   end;
 
-  if (not video) and SameText(ExtractFileExt(url), '.opus') then
+  if (not video) and audioSuportadoPeloBass(url) then
   begin
     playerBass(url);
     Exit;
