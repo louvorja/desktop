@@ -10,6 +10,15 @@ uses
   Vcl.Grids, Vcl.DBGrids, bsSkinGrids, bsDBGrids,
   Vcl.Imaging.pngimage, Datasnap.DBClient, Vcl.DBCtrls;
 
+const
+  //Fechar a musica e abrir a verificacao nao pode acontecer de dentro do
+  //FormActivate: ele dispara durante a exibicao do form, e a VCL recusa
+  //mexer em Visible ali ("Cannot change Visible in OnShow or OnHide").
+  //Postada, a mensagem so e tratada depois que a exibicao termina.
+  //Faixa WM_APP, reservada a aplicacao, para nao esbarrar nas mensagens
+  //que o BusinessSkinForm define sobre WM_USER.
+  WM_VERIFICA_ARQUIVOS = WM_APP + 17;
+
 type
   TfMusica = class(TForm)
     pnlLetra: TPanel;
@@ -87,7 +96,18 @@ type
     uPosicao: Integer;
     imgPosicao: Integer;
 
+    //Imagens de slide que faltam nesta musica, juntadas durante o
+    //carregaTempos para uma pergunta so. Ver verificaArquivosDaMusica.
+    imagensFaltando: TStringList;
+    baixouArquivos: Boolean;
+    fecharPorVerificacao: Boolean;
+
     procedure CreateParams(var Params: TCreateParams); override;
+    procedure WMVerificaArquivos(var Msg: TMessage);
+      message WM_VERIFICA_ARQUIVOS;
+    function urlAudioBanco: string;
+    function caminhoAudio: string;
+    procedure verificaArquivosDaMusica;
   public
     { Public declarations }
     musicaID,albumID: Integer;
@@ -112,7 +132,7 @@ implementation
 
 {$R *.dfm}
 
-uses fmMenu, fmMusicaOperador, fmAtualiza, dmComponentes, fmIniciando,
+uses fmMenu, fmMusicaOperador, dmComponentes,
   fmTransmitir, fmMusicaRetorno;
 
 { TfMusica }
@@ -546,10 +566,25 @@ procedure TfMusica.carregaMusica;
 var
   f: PChar;
   musica: string;
-  lista: TStringList;
 begin
+  if (imagensFaltando = nil)
+    then imagensFaltando := TStringList.Create
+    else imagensFaltando.Clear;
+  baixouArquivos := False;
+  fecharPorVerificacao := False;
+
   carregaSlides();
   carregaTempos();
+  verificaArquivosDaMusica();
+
+  //Verificar tudo varre o acervo inteiro e demora: nao faz sentido deixar a
+  //musica esperando por ela. Quem fecha e o WMVerificaArquivos, fora da
+  //sequencia de exibicao do form.
+  if fecharPorVerificacao then
+  begin
+    PostMessage(Handle, WM_VERIFICA_ARQUIVOS, 0, 0);
+    Exit;
+  end;
 
   if DM.tmrSair.Enabled = true then Exit;
 
@@ -568,44 +603,17 @@ begin
 
   if (audio) then
   begin
-    musica := DM.cdsSLIDE_MUSICA.FieldByName('URL_MUSICA').AsString;
-    musica := StringReplace(musica,'*', ExtractFilePath(application.ExeName), [rfIgnoreCase, rfReplaceAll]);
-    if (musica <> '') and (musicaID > 0) then
-      musica := fmIndex.dir_config+'musicas\'+musica
-    else if FileExists(ExtractFilePath(param)+'\'+musica) then
-      musica := ExtractFilePath(param)+'\'+musica;
-
-    musica := StringReplace(musica,'/', '\', [rfIgnoreCase, rfReplaceAll]);
-    musica := StringReplace(musica,'\\', '\', [rfIgnoreCase, rfReplaceAll]);
-    //Transicao mp3 -> opus: se o .opus ainda nao foi baixado mas existe o
-    //.mp3 de mesmo nome, toca o mp3
-    musica := fmIndex.audioComAlternativaMp3(musica);
+    musica := caminhoAudio;
     if (Trim(musica) = '') then audio := false;
 
+    //A pergunta de download ja foi feita no verificaArquivosDaMusica,
+    //com todos os arquivos da musica de uma vez
     if (audio) and not (FileExists(musica)) then
-    begin
-      if (musicaID <= 0) then
-        audio := false
-      else if (application.MessageBox(PChar('Arquivo "'+musica+'" não encontrado! Deseja baixar este arquivo agora?'), fmIndex.titulo, mb_yesno + mb_iconerror) = 6) then
-      begin
-        lista := TStringList.Create;
-        lista.Clear;
-        lista.Add('config\musicas\'+StringReplace(DM.cdsSLIDE_MUSICA.FieldByName('URL_MUSICA').AsString,'/', '\', [rfIgnoreCase, rfReplaceAll]));
+      audio := False;
 
-        fIniciando.AppCreateForm(TfAtualiza, fAtualiza);
-        fAtualiza.arquivos := lista;
-        fAtualiza.ShowModal;
-
-        if not (FileExists(musica)) then
-        begin
-          application.MessageBox(PChar('Não foi possível baixar o arquivo "'+musica+'"! Os slides serão executados sem áudio!'), fmIndex.titulo, mb_ok + mb_iconerror);
-          audio := False;
-        end;
-      end
-      else
-        audio := False;
-    end
-    else
+    //Dois ifs no lugar de if/else: baixado agora, o audio toca nesta
+    //mesma abertura em vez de so na proxima
+    if (audio) then
     begin
 
       // check the correct BASS was loaded
@@ -901,11 +909,10 @@ end;
 
 procedure TfMusica.carregaTempos;
 var
-  lista,lista_img: TStringList;
+  imagem: string;
 begin
   if (tipo <> 'BD') then Exit;
 
-  lista_img := TStringList.Create;
   lbTempos.Items.Clear;
   DM.qrSLIDE_MUSICA_TEMPOS.Close;
   DM.qrSLIDE_MUSICA_TEMPOS.ParamByName('MUSICA_ID').Value := musicaID;
@@ -915,28 +922,144 @@ begin
     if (param = 'PB')
       then lbTempos.Items.Add('0'+DM.qrSLIDE_MUSICA_TEMPOS.FieldByName('TEMPO_PB').AsString)
       else lbTempos.Items.Add('0'+DM.qrSLIDE_MUSICA_TEMPOS.FieldByName('TEMPO').AsString);
-    if (DM.qrSLIDE_MUSICA_TEMPOS.FieldByName('IMAGEM').AsString <> '')
-    and (not FileExists(fmIndex.dir_config+'imagens\'+DM.qrSLIDE_MUSICA_TEMPOS.FieldByName('IMAGEM').AsString))
-    and (lista_img.IndexOf(DM.qrSLIDE_MUSICA_TEMPOS.FieldByName('IMAGEM').AsString) = -1) then
-    begin
-      lista_img.Add(DM.qrSLIDE_MUSICA_TEMPOS.FieldByName('IMAGEM').AsString);
-      if (application.MessageBox(PChar('Arquivo "'+fmIndex.dir_config+'imagens\'+DM.qrSLIDE_MUSICA_TEMPOS.FieldByName('IMAGEM').AsString+'" não encontrado! Deseja baixar este arquivo agora?'), fmIndex.titulo, mb_yesno + mb_iconerror) = 6) then
-      begin
-        lista := TStringList.Create;
-        lista.Clear;
-        lista.Add('config\imagens\'+DM.qrSLIDE_MUSICA_TEMPOS.FieldByName('IMAGEM').AsString);
 
-        fIniciando.AppCreateForm(TfAtualiza, fAtualiza);
-        fAtualiza.arquivos := lista;
-        fAtualiza.ShowModal;
+    //Nada de perguntar aqui: so junta o que falta, uma vez por imagem.
+    //Quem pergunta, para tudo de uma vez, e o verificaArquivosDaMusica.
+    imagem := DM.qrSLIDE_MUSICA_TEMPOS.FieldByName('IMAGEM').AsString;
+    if (imagem <> '')
+    and (not FileExists(fmIndex.dir_config+'imagens\'+imagem))
+    and (imagensFaltando.IndexOf(imagem) = -1) then
+      imagensFaltando.Add(imagem);
 
-        if not (FileExists(fmIndex.dir_config+'imagens\'+DM.qrSLIDE_MUSICA_TEMPOS.FieldByName('IMAGEM').AsString)) then
-          application.MessageBox(PChar('Não foi possível baixar o arquivo "'+DM.qrSLIDE_MUSICA_TEMPOS.FieldByName('IMAGEM').AsString+'"! A tela ficará preta ao utilizar esta imagem!'), fmIndex.titulo, mb_ok + mb_iconerror);
-      end
-    end;
     DM.qrSLIDE_MUSICA_TEMPOS.Next;
   end;
   DM.qrSLIDE_MUSICA_TEMPOS.Close;
+end;
+
+//O URL_MUSICA e coluna de MUSICAS_SLIDE e so vem preenchido no slide de capa,
+//o primeiro: nos demais a coluna e vazia. Como o carregaSlides deixa o cursor
+//no ultimo slide, ler do registro atual devolvia vazio. Le sempre do primeiro
+//e devolve o cursor para onde estava.
+procedure TfMusica.WMVerificaArquivos(var Msg: TMessage);
+begin
+  fecharPorVerificacao := False;
+  Close;
+  fmIndex.abreVerificacaoArquivos;
+end;
+
+function TfMusica.urlAudioBanco: string;
+var
+  marca: TBookmark;
+begin
+  Result := '';
+  if not DM.cdsSLIDE_MUSICA.Active then
+    Exit;
+
+  marca := DM.cdsSLIDE_MUSICA.GetBookmark;
+  DM.cdsSLIDE_MUSICA.DisableControls;
+  try
+    DM.cdsSLIDE_MUSICA.First;
+    Result := DM.cdsSLIDE_MUSICA.FieldByName('URL_MUSICA').AsString;
+  finally
+    if DM.cdsSLIDE_MUSICA.BookmarkValid(marca) then
+      DM.cdsSLIDE_MUSICA.GotoBookmark(marca);
+    DM.cdsSLIDE_MUSICA.EnableControls;
+  end;
+end;
+
+function TfMusica.caminhoAudio: string;
+var
+  musica: string;
+begin
+  musica := urlAudioBanco;
+  musica := StringReplace(musica,'*', ExtractFilePath(application.ExeName), [rfIgnoreCase, rfReplaceAll]);
+  if (musica <> '') and (musicaID > 0) then
+    musica := fmIndex.dir_config+'musicas\'+musica
+  else if FileExists(ExtractFilePath(param)+'\'+musica) then
+    musica := ExtractFilePath(param)+'\'+musica;
+
+  musica := StringReplace(musica,'/', '\', [rfIgnoreCase, rfReplaceAll]);
+  musica := StringReplace(musica,'\\', '\', [rfIgnoreCase, rfReplaceAll]);
+  //Transicao mp3 -> opus: se o .opus ainda nao foi baixado mas existe o
+  //.mp3 de mesmo nome, toca o mp3
+  Result := fmIndex.audioComAlternativaMp3(musica);
+end;
+
+//Junta tudo que falta nesta musica - imagens dos slides e audio - e pergunta
+//uma vez so. Antes era uma pergunta por arquivo, entao abrir uma musica com
+//audio e duas imagens em falta rendia tres perguntas e tres downloads.
+procedure TfMusica.verificaArquivosDaMusica;
+var
+  lista: TStringList;
+  i, falhas, escolha: Integer;
+  musica: string;
+  faltaAudio, faltaImagem: Boolean;
+begin
+  if (imagensFaltando = nil) then
+    Exit;
+
+  try
+    lista := TStringList.Create;
+    try
+      for i := 0 to imagensFaltando.Count - 1 do
+        lista.Add('config\imagens\' + imagensFaltando[i]);
+
+      faltaAudio := False;
+      if (audio) and (musicaID > 0) then
+      begin
+        musica := caminhoAudio;
+        if (Trim(musica) <> '') and (not FileExists(musica)) then
+        begin
+          faltaAudio := True;
+          lista.Add('config\musicas\' + StringReplace(urlAudioBanco,
+            '/', '\', [rfIgnoreCase, rfReplaceAll]));
+        end;
+      end;
+
+      if (lista.Count <= 0) then
+        Exit;
+
+      escolha := fmIndex.resolveArquivosFaltando(lista,
+        Ord(faltaAudio), imagensFaltando.Count);
+    finally
+      lista.Free;
+    end;
+
+    //Quem abre a verificacao e o carregaMusica, depois de fechar a musica
+    if (escolha = mrAll) then
+    begin
+      fecharPorVerificacao := True;
+      Exit;
+    end;
+
+    baixouArquivos := (escolha = mrYes);
+
+    //Quem escolheu abrir sem baixar nao precisa de aviso: foi escolha dele
+    if not baixouArquivos then
+      Exit;
+
+    falhas := 0;
+    faltaImagem := False;
+    for i := 0 to imagensFaltando.Count - 1 do
+      if not FileExists(fmIndex.dir_config + 'imagens\' + imagensFaltando[i]) then
+      begin
+        faltaImagem := True;
+        Inc(falhas);
+      end;
+
+    if faltaAudio then
+    begin
+      musica := caminhoAudio;
+      faltaAudio := (Trim(musica) = '') or (not FileExists(musica));
+      if faltaAudio then
+        Inc(falhas);
+    end;
+
+    fmIndex.avisaArquivosNaoBaixados(falhas, faltaAudio, faltaImagem);
+  finally
+    imagensFaltando.Free;
+    imagensFaltando := nil;
+  end;
 end;
 
 procedure TfMusica.converteTempos;

@@ -39,6 +39,7 @@ type
   private
     { Private declarations }
     alerta: Boolean;
+    verificado: Boolean;
   public
     { Public declarations }
   end;
@@ -176,6 +177,13 @@ end;
 
 procedure TfArquivosFalta.FormActivate(Sender: TObject);
 begin
+  //OnActivate dispara toda vez que a janela reganha o foco, inclusive
+  //quando o fAtualiza interno fecha. Sem esta trava a verificacao do
+  //acervo inteiro recomeca sozinha. O botao Verifica chama direto.
+  if verificado then
+    Exit;
+
+  verificado := True;
   verificaArquivos();
 end;
 
