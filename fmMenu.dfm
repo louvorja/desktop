@@ -21228,19 +21228,6 @@ object fmIndex: TfmIndex
       ExplicitTop = 0
       ExplicitWidth = 0
       ExplicitHeight = 0
-      object mpMusica: TMediaPlayer
-        Left = 0
-        Top = 409
-        Width = 1368
-        Height = 25
-        Align = alBottom
-        VisibleButtons = [btPlay, btStop]
-        DoubleBuffered = True
-        Visible = False
-        ParentDoubleBuffered = False
-        TabOrder = 2
-        ExplicitWidth = -1
-      end
       object pnlFormatEscSB: TbsSkinExPanel
         Tag = 3
         Left = 0
