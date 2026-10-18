@@ -193,6 +193,9 @@ begin
 end;
 
 procedure TfArquivosFalta.verificaArquivos;
+const
+  //De quantos em quantos arquivos a tela acompanha a varredura.
+  PASSO_INTERFACE = 100;
 var
   Item: TListItem;
   existe: Boolean;
@@ -200,6 +203,17 @@ var
   tamanho: Longint;
   url, completo: string;
   usa_mp3: Boolean;
+  lidos: Integer;
+
+  procedure mostraProgresso;
+  begin
+    lblStatus.Caption := 'Verificando... ' +
+      inttostr(DM.qrARQUIVOS_SISTEMA.RecNo) + ' / ' +
+      inttostr(DM.qrARQUIVOS_SISTEMA.RecordCount);
+    gProgresso.Value := DM.qrARQUIVOS_SISTEMA.RecNo;
+    Application.ProcessMessages;
+  end;
+
 begin
   gpBotoes.Visible := False;
 
@@ -209,6 +223,7 @@ begin
   lblStatus.Caption := '';
   a_sim := 0;
   a_nao := 0;
+  lidos := 0;
 
   DM.qrARQUIVOS_SISTEMA.Close;
   DM.qrARQUIVOS_SISTEMA.Open;
@@ -222,7 +237,6 @@ begin
     if (fIniciando.paramexec.Strings.Values['dir_config'] <> '') then
       url := StringReplace(url,'config\',fIniciando.paramexec.Strings.Values['dir_config']+'\',[rfIgnoreCase, rfReplaceAll]);
 //      showmessage(url);
-    lblStatus.Caption := 'Verificando... '+inttostr(DM.qrARQUIVOS_SISTEMA.RecNo)+' / '+inttostr(DM.qrARQUIVOS_SISTEMA.RecordCount);
     completo := ExtractFilePath(application.ExeName)+'/'+url;
     existe := FileExists(completo);
 
@@ -265,11 +279,14 @@ begin
     end
     else a_sim := a_sim + 1;
 
-    gProgresso.Value := DM.qrARQUIVOS_SISTEMA.RecNo;
-    Application.ProcessMessages;
+    Inc(lidos);
+    if (lidos mod PASSO_INTERFACE = 0) then
+      mostraProgresso;
+
     DM.qrARQUIVOS_SISTEMA.Next;
   end;
 
+  gProgresso.Value := gProgresso.MaxValue;
   btBaixa.Enabled := True;
   btVerifica.Enabled := True;
   lblStatus.Caption := 'Encontrados: '+inttostr(a_sim)+#13#10+'Em falta/danificado(s): '+inttostr(a_nao);
