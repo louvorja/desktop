@@ -253,6 +253,9 @@ begin
   gProgresso.MaxValue := DM.qrARQUIVOS_SISTEMA.RecordCount;
   btBaixa.Enabled := False;
   btVerifica.Enabled := False;
+
+  mostraProgresso;
+
   //Sem isto o ListView recalcula o layout e repinta a cada item inserido.
   //Numa instalacao nova, com milhares de arquivos em falta, e o que trava a
   //tela: assim ele desenha a lista uma vez, no fim.
