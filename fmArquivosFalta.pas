@@ -253,56 +253,65 @@ begin
   gProgresso.MaxValue := DM.qrARQUIVOS_SISTEMA.RecordCount;
   btBaixa.Enabled := False;
   btVerifica.Enabled := False;
-  while not DM.qrARQUIVOS_SISTEMA.eof do
-  begin
-    url := DM.qrARQUIVOS_SISTEMA.FieldByName('URL').AsString;
-    if (fIniciando.paramexec.Strings.Values['dir_config'] <> '') then
-      url := StringReplace(url,'config\',fIniciando.paramexec.Strings.Values['dir_config']+'\',[rfIgnoreCase, rfReplaceAll]);
-//      showmessage(url);
-    completo := ExtractFilePath(application.ExeName)+'/'+url;
-    existe := dadosDoArquivo(completo, tamanho);
+  //Sem isto o ListView recalcula o layout e repinta a cada item inserido.
+  //Numa instalacao nova, com milhares de arquivos em falta, e o que trava a
+  //tela: assim ele desenha a lista uma vez, no fim.
+  lvArquivos.Items.BeginUpdate;
+  try
+    while not DM.qrARQUIVOS_SISTEMA.eof do
+    begin
+      url := DM.qrARQUIVOS_SISTEMA.FieldByName('URL').AsString;
+      if (fIniciando.paramexec.Strings.Values['dir_config'] <> '') then
+        url := StringReplace(url,'config\',fIniciando.paramexec.Strings.Values['dir_config']+'\',[rfIgnoreCase, rfReplaceAll]);
+  //      showmessage(url);
+      completo := ExtractFilePath(application.ExeName)+'/'+url;
+      existe := dadosDoArquivo(completo, tamanho);
 
-    //Transicao mp3 -> opus: quem ja tem o .mp3 de mesmo nome nao precisa
-    //baixar o .opus. O TAMANHO do registro e o do opus, entao nesse caso
-    //nao faz sentido conferir o tamanho do arquivo.
-    usa_mp3 := False;
-    if not existe then
-    begin
-      usa_mp3 := (fmIndex.audioComAlternativaMp3(completo) <> completo);
-      existe := usa_mp3;
-    end;
+      //Transicao mp3 -> opus: quem ja tem o .mp3 de mesmo nome nao precisa
+      //baixar o .opus. O TAMANHO do registro e o do opus, entao nesse caso
+      //nao faz sentido conferir o tamanho do arquivo.
+      usa_mp3 := False;
+      if not existe then
+      begin
+        usa_mp3 := (fmIndex.audioComAlternativaMp3(completo) <> completo);
+        existe := usa_mp3;
+      end;
 
-    if not existe then
-    begin
-      Item := lvArquivos.Items.Add;
-      Item.Checked := not existe;
-      Item.Caption := DM.qrARQUIVOS_SISTEMA.FieldByName('ARQUIVO').AsString;
-      Item.SubItems.Add(url);
-      a_nao := a_nao + 1;
-      Item.SubItems.Add('Não encontrado');
-    end
-    else if usa_mp3 then
-      a_sim := a_sim + 1
-    else if (DM.qrARQUIVOS_SISTEMA.FieldByName('TAMANHO').AsInteger > 0) then
-    begin
-      if (tamanho >= 0) and (tamanho < DM.qrARQUIVOS_SISTEMA.FieldByName('TAMANHO').AsInteger) then
+      if not existe then
       begin
         Item := lvArquivos.Items.Add;
-        Item.Checked := True;
+        Item.Checked := not existe;
         Item.Caption := DM.qrARQUIVOS_SISTEMA.FieldByName('ARQUIVO').AsString;
         Item.SubItems.Add(url);
-        Item.SubItems.Add('Danificado');
         a_nao := a_nao + 1;
+        Item.SubItems.Add('Não encontrado');
+      end
+      else if usa_mp3 then
+        a_sim := a_sim + 1
+      else if (DM.qrARQUIVOS_SISTEMA.FieldByName('TAMANHO').AsInteger > 0) then
+      begin
+        if (tamanho >= 0) and (tamanho < DM.qrARQUIVOS_SISTEMA.FieldByName('TAMANHO').AsInteger) then
+        begin
+          Item := lvArquivos.Items.Add;
+          Item.Checked := True;
+          Item.Caption := DM.qrARQUIVOS_SISTEMA.FieldByName('ARQUIVO').AsString;
+          Item.SubItems.Add(url);
+          Item.SubItems.Add('Danificado');
+          a_nao := a_nao + 1;
+        end
+        else a_sim := a_sim + 1;
       end
       else a_sim := a_sim + 1;
-    end
-    else a_sim := a_sim + 1;
 
-    Inc(lidos);
-    if (lidos mod PASSO_INTERFACE = 0) then
-      mostraProgresso;
+      Inc(lidos);
+      if (lidos mod PASSO_INTERFACE = 0) then
+        mostraProgresso;
 
-    DM.qrARQUIVOS_SISTEMA.Next;
+      DM.qrARQUIVOS_SISTEMA.Next;
+    end;
+
+  finally
+    lvArquivos.Items.EndUpdate;
   end;
 
   gProgresso.Value := gProgresso.MaxValue;
