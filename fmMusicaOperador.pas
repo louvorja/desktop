@@ -178,7 +178,8 @@ begin
   begin
     if fMusicaOperador.Tag = 1 then
     begin
-      if (application.MessageBox('Ao fechar esta tela, os slides também serão fechados! Deseja fechar os slides?', fmIndex.titulo, mb_yesno + mb_iconquestion) <> 6) then
+      if (application.MessageBox('Ao fechar esta tela, os slides também serão fechados! Deseja fechar os slides?', fmIndex.titulo,
+          mb_yesno + mb_iconquestion + MB_TOPMOST + MB_SETFOREGROUND) <> 6) then
       begin
         Abort;
         Exit;
