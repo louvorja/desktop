@@ -192,6 +192,28 @@ begin
   Close;
 end;
 
+//Existencia e tamanho numa chamada so ao sistema de arquivos, em vez de um
+//FileExists seguido de um FileSize. Pasta nao conta como arquivo.
+//
+//O tamanho vinha de fmIndex.FileSize(url), com o caminho RELATIVO, enquanto a
+//existencia era conferida no caminho absoluto. Fora da pasta do exe o relativo
+//nao resolvia, o tamanho voltava -1 e a checagem de arquivo danificado nunca
+//rodava: truncado passava por integro.
+function dadosDoArquivo(const caminho: string; out tamanho: Int64): Boolean;
+var
+  info: TWin32FileAttributeData;
+begin
+  tamanho := -1;
+
+  Result := GetFileAttributesEx(PChar(caminho), GetFileExInfoStandard, @info);
+  if not Result then
+    Exit;
+
+  Result := (info.dwFileAttributes and FILE_ATTRIBUTE_DIRECTORY) = 0;
+  if Result then
+    tamanho := Int64(info.nFileSizeHigh) shl 32 or Int64(info.nFileSizeLow);
+end;
+
 procedure TfArquivosFalta.verificaArquivos;
 const
   //De quantos em quantos arquivos a tela acompanha a varredura.
@@ -200,7 +222,7 @@ var
   Item: TListItem;
   existe: Boolean;
   a_sim,a_nao: Integer;
-  tamanho: Longint;
+  tamanho: Int64;
   url, completo: string;
   usa_mp3: Boolean;
   lidos: Integer;
@@ -238,7 +260,7 @@ begin
       url := StringReplace(url,'config\',fIniciando.paramexec.Strings.Values['dir_config']+'\',[rfIgnoreCase, rfReplaceAll]);
 //      showmessage(url);
     completo := ExtractFilePath(application.ExeName)+'/'+url;
-    existe := FileExists(completo);
+    existe := dadosDoArquivo(completo, tamanho);
 
     //Transicao mp3 -> opus: quem ja tem o .mp3 de mesmo nome nao precisa
     //baixar o .opus. O TAMANHO do registro e o do opus, entao nesse caso
@@ -263,9 +285,6 @@ begin
       a_sim := a_sim + 1
     else if (DM.qrARQUIVOS_SISTEMA.FieldByName('TAMANHO').AsInteger > 0) then
     begin
-      tamanho := fmIndex.FileSize(url);
-
-
       if (tamanho >= 0) and (tamanho < DM.qrARQUIVOS_SISTEMA.FieldByName('TAMANHO').AsInteger) then
       begin
         Item := lvArquivos.Items.Add;
