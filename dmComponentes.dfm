@@ -95753,6 +95753,7 @@ object DM: TDM
   end
   object tmrBusca: TTimer
     Enabled = False
+    Interval = 250
     OnTimer = tmrBuscaTimer
     Left = 664
     Top = 424
