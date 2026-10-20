@@ -1926,6 +1926,11 @@ type
     procedure player(url: string;video: Boolean = true);
     function mciErroDeCodec(erro: DWORD): Boolean;
     function avisaCodecAusente: Boolean;
+    function resolveArquivosFaltando(lista: TStringList;
+      qtdAudio, qtdImagens: Integer): Integer;
+    procedure abreVerificacaoArquivos;
+    procedure avisaArquivosNaoBaixados(falhas: Integer;
+      semAudio, semImagem: Boolean);
     procedure btInstalarCodecsClick(Sender: TObject);
     procedure sbVideoOnAreaExtendidaChange(Sender: TObject);
     procedure ckVideoOnJanelaClick(Sender: TObject);
@@ -3250,10 +3255,132 @@ begin
   end;
 end;
 
+{
+  Uma pergunta so para tudo que falta na musica, no lugar de uma por
+  arquivo. Devolve o botao escolhido: mrYes ja baixou (o chamador reconfere
+  os arquivos), mrAll pede a verificacao do acervo inteiro (quem abre e o
+  chamador, porque ela demora e a musica tem de sair da frente antes),
+  mrNo ou mrCancel seguem sem baixar. mrNone quando nao havia o que perguntar.
+
+  A lista e do chamador: aqui ela so e lida.
+
+  Cada Translate recebe uma linha so: o arquivo de idioma e nome=valor, e uma
+  quebra de linha dentro da chave o corromperia.
+}
+function TfmIndex.resolveArquivosFaltando(lista: TStringList;
+  qtdAudio, qtdImagens: Integer): Integer;
+var
+  td: TTaskDialog;
+  btTudo, btEsta, btNao: TTaskDialogButtonItem;
+  paraBaixar: TStringList;
+  total: Integer;
+  descricao: string;
+begin
+  Result := mrNone;
+  if (lista = nil) or (lista.Count <= 0) then
+    Exit;
+
+  total := qtdAudio + qtdImagens;
+
+  descricao := '';
+  if (qtdAudio > 0) then
+    descricao := fIniciando.Translate('o áudio');
+  if (qtdImagens > 0) then
+  begin
+    if (descricao <> '') then
+      descricao := descricao + ' ' + fIniciando.Translate('e') + ' ';
+    if (qtdImagens = 1)
+      then descricao := descricao + fIniciando.Translate('1 imagem de fundo')
+      else descricao := descricao + IntToStr(qtdImagens) + ' ' +
+        fIniciando.Translate('imagens de fundo');
+  end;
+
+  td := TTaskDialog.Create(nil);
+  try
+    td.Caption := TITULO;
+    td.MainIcon := tdiWarning;
+    td.Title := fIniciando.Translate('Esta música tem arquivos que ainda não foram baixados.');
+    if (total = 1)
+      then td.Text := fIniciando.Translate('1 arquivo em falta') + ': ' + descricao + '.'
+      else td.Text := IntToStr(total) + ' ' +
+        fIniciando.Translate('arquivos em falta') + ': ' + descricao + '.';
+
+    //Sem os botões padrão: os três abaixo são os únicos caminhos. Esc
+    //equivale a não baixar, que é o seguro.
+    td.CommonButtons := [];
+    td.Flags := td.Flags + [tfAllowDialogCancellation];
+
+    btTudo := td.Buttons.Add as TTaskDialogButtonItem;
+    btTudo.Caption := fIniciando.Translate('Verificar tudo');
+    btTudo.ModalResult := mrAll;
+    btTudo.Default := True;
+
+    btEsta := td.Buttons.Add as TTaskDialogButtonItem;
+    btEsta.Caption := fIniciando.Translate('Baixar esta');
+    btEsta.ModalResult := mrYes;
+
+    btNao := td.Buttons.Add as TTaskDialogButtonItem;
+    btNao.Caption := fIniciando.Translate('Não baixar');
+    btNao.ModalResult := mrNo;
+
+    td.Execute;
+    Result := td.ModalResult;
+
+    if (Result = mrYes) then
+    begin
+      //O fAtualiza passa a ser dono da lista que recebe, por isso a copia
+      paraBaixar := TStringList.Create;
+      paraBaixar.Assign(lista);
+
+      fIniciando.AppCreateForm(TfAtualiza, fAtualiza);
+      fAtualiza.cancela := False;
+      fAtualiza.arquivos := paraBaixar;
+      fAtualiza.ShowModal;
+    end;
+  finally
+    td.Free;
+  end;
+end;
+
+//A verificacao do acervo inteiro. Fica em metodo proprio porque quem escolhe
+//"Verificar tudo" precisa primeiro se livrar do que estiver na frente - a
+//musica, por exemplo - antes de encarar uma varredura demorada.
+procedure TfmIndex.abreVerificacaoArquivos;
+begin
+  fIniciando.AppCreateForm(TfArquivosFalta, fArquivosFalta);
+  fArquivosFalta.ShowModal;
+end;
+
+//Um aviso so para tudo que continuou faltando depois da tentativa, no lugar
+//de um por arquivo.
+procedure TfmIndex.avisaArquivosNaoBaixados(falhas: Integer;
+  semAudio, semImagem: Boolean);
+var
+  aviso: string;
+begin
+  if (falhas <= 0) then
+    Exit;
+
+  if (falhas = 1)
+    then aviso := fIniciando.Translate('Não foi possível baixar 1 arquivo!')
+    else aviso := IntToStr(falhas) + ' ' +
+      fIniciando.Translate('arquivos não puderam ser baixados!');
+
+  if semAudio then
+    aviso := aviso + #13#10 +
+      fIniciando.Translate('Os slides serão executados sem áudio.');
+  if semImagem then
+    aviso := aviso + #13#10 +
+      fIniciando.Translate('A tela ficará preta onde faltar imagem.');
+
+  Application.MessageBox(PChar(aviso), TITULO, mb_ok + mb_iconerror);
+end;
+
 procedure TfmIndex.abreArquivoMusica(musicaID: Integer; album, url: string);
 var
   musica: string;
   lista: TStringList;
+  escolha: Integer;
 begin
   if (url = '') then
   begin
@@ -3266,25 +3393,30 @@ begin
   end;
   musica := dir_config+'musicas\'+album+'\'+url;
   musica := audioComAlternativaMp3(musica);
+
   if not (FileExists(musica)) then
   begin
-    if (application.MessageBox(PChar('Arquivo "'+musica+'" não encontrado! Deseja baixar este arquivo agora?'), fmIndex.titulo, mb_yesno + mb_iconerror) = 6) then
-    begin
-      lista := TStringList.Create;
-      lista.Clear;
+    lista := TStringList.Create;
+    try
       lista.Add('config\musicas\'+album+'\'+url);
-
-      fIniciando.AppCreateForm(TfAtualiza, fAtualiza);
-      fAtualiza.arquivos := lista;
-      fAtualiza.ShowModal;
-
-      if not (FileExists(musica))
-        then application.MessageBox(PChar('Não foi possível baixar o arquivo "'+ExtractFilePath(application.ExeName)+musica+'"!'), fmIndex.titulo, mb_ok + mb_iconerror)
-        else fmIndex.abrirArquivo(musica);
+      escolha := resolveArquivosFaltando(lista, 1, 0);
+    finally
+      lista.Free;
     end;
-  end
-  else
-    fmIndex.abrirArquivo(musica);
+
+    if (escolha = mrAll) then
+      abreVerificacaoArquivos
+    else if (escolha <> mrYes) then
+      Exit;
+
+    if not (FileExists(musica)) then
+    begin
+      avisaArquivosNaoBaixados(1, False, False);
+      Exit;
+    end;
+  end;
+
+  fmIndex.abrirArquivo(musica);
 end;
 
 procedure TfmIndex.abreLetra(ID: integer; BUSCA: string);
