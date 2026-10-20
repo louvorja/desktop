@@ -10171,6 +10171,9 @@ procedure TfmIndex.bsSkinButton38Click(Sender: TObject);
 begin
   if bsRibbon1.AppMenu.Visible then
     bsRibbon1.AppMenu.Visible := false;
+
+  Application.ProcessMessages;
+
   fIniciando.AppCreateForm(TfArquivosFalta,fArquivosFalta);
   fArquivosFalta.showmodal;
 end;

@@ -200,14 +200,50 @@ begin
   Close;
 end;
 
+//Existencia e tamanho numa chamada so ao sistema de arquivos, em vez de um
+//FileExists seguido de um FileSize. Pasta nao conta como arquivo.
+//
+//O tamanho vinha de fmIndex.FileSize(url), com o caminho RELATIVO, enquanto a
+//existencia era conferida no caminho absoluto. Fora da pasta do exe o relativo
+//nao resolvia, o tamanho voltava -1 e a checagem de arquivo danificado nunca
+//rodava: truncado passava por integro.
+function dadosDoArquivo(const caminho: string; out tamanho: Int64): Boolean;
+var
+  info: TWin32FileAttributeData;
+begin
+  tamanho := -1;
+
+  Result := GetFileAttributesEx(PChar(caminho), GetFileExInfoStandard, @info);
+  if not Result then
+    Exit;
+
+  Result := (info.dwFileAttributes and FILE_ATTRIBUTE_DIRECTORY) = 0;
+  if Result then
+    tamanho := Int64(info.nFileSizeHigh) shl 32 or Int64(info.nFileSizeLow);
+end;
+
 procedure TfArquivosFalta.verificaArquivos;
+const
+  //De quantos em quantos arquivos a tela acompanha a varredura.
+  PASSO_INTERFACE = 100;
 var
   Item: TListItem;
   existe: Boolean;
   a_sim,a_nao: Integer;
-  tamanho: Longint;
+  tamanho: Int64;
   url, completo: string;
   usa_mp3: Boolean;
+  lidos: Integer;
+
+  procedure mostraProgresso;
+  begin
+    lblStatus.Caption := 'Verificando... ' +
+      inttostr(DM.qrARQUIVOS_SISTEMA.RecNo) + ' / ' +
+      inttostr(DM.qrARQUIVOS_SISTEMA.RecordCount);
+    gProgresso.Value := DM.qrARQUIVOS_SISTEMA.RecNo;
+    Application.ProcessMessages;
+  end;
+
 begin
   gpBotoes.Visible := False;
 
@@ -217,6 +253,7 @@ begin
   lblStatus.Caption := '';
   a_sim := 0;
   a_nao := 0;
+  lidos := 0;
 
   DM.qrARQUIVOS_SISTEMA.Close;
   DM.qrARQUIVOS_SISTEMA.Open;
@@ -224,60 +261,71 @@ begin
   gProgresso.MaxValue := DM.qrARQUIVOS_SISTEMA.RecordCount;
   btBaixa.Enabled := False;
   btVerifica.Enabled := False;
-  while not DM.qrARQUIVOS_SISTEMA.eof do
-  begin
-    url := DM.qrARQUIVOS_SISTEMA.FieldByName('URL').AsString;
-    if (fIniciando.paramexec.Strings.Values['dir_config'] <> '') then
-      url := StringReplace(url,'config\',fIniciando.paramexec.Strings.Values['dir_config']+'\',[rfIgnoreCase, rfReplaceAll]);
-//      showmessage(url);
-    lblStatus.Caption := 'Verificando... '+inttostr(DM.qrARQUIVOS_SISTEMA.RecNo)+' / '+inttostr(DM.qrARQUIVOS_SISTEMA.RecordCount);
-    completo := ExtractFilePath(application.ExeName)+'/'+url;
-    existe := FileExists(completo);
 
-    //Transicao mp3 -> opus: quem ja tem o .mp3 de mesmo nome nao precisa
-    //baixar o .opus. O TAMANHO do registro e o do opus, entao nesse caso
-    //nao faz sentido conferir o tamanho do arquivo.
-    usa_mp3 := False;
-    if not existe then
+  mostraProgresso;
+
+  //Sem isto o ListView recalcula o layout e repinta a cada item inserido.
+  //Numa instalacao nova, com milhares de arquivos em falta, e o que trava a
+  //tela: assim ele desenha a lista uma vez, no fim.
+  lvArquivos.Items.BeginUpdate;
+  try
+    while not DM.qrARQUIVOS_SISTEMA.eof do
     begin
-      usa_mp3 := (fmIndex.audioComAlternativaMp3(completo) <> completo);
-      existe := usa_mp3;
-    end;
+      url := DM.qrARQUIVOS_SISTEMA.FieldByName('URL').AsString;
+      if (fIniciando.paramexec.Strings.Values['dir_config'] <> '') then
+        url := StringReplace(url,'config\',fIniciando.paramexec.Strings.Values['dir_config']+'\',[rfIgnoreCase, rfReplaceAll]);
+  //      showmessage(url);
+      completo := ExtractFilePath(application.ExeName)+'/'+url;
+      existe := dadosDoArquivo(completo, tamanho);
 
-    if not existe then
-    begin
-      Item := lvArquivos.Items.Add;
-      Item.Checked := not existe;
-      Item.Caption := DM.qrARQUIVOS_SISTEMA.FieldByName('ARQUIVO').AsString;
-      Item.SubItems.Add(url);
-      a_nao := a_nao + 1;
-      Item.SubItems.Add('Não encontrado');
-    end
-    else if usa_mp3 then
-      a_sim := a_sim + 1
-    else if (DM.qrARQUIVOS_SISTEMA.FieldByName('TAMANHO').AsInteger > 0) then
-    begin
-      tamanho := fmIndex.FileSize(url);
+      //Transicao mp3 -> opus: quem ja tem o .mp3 de mesmo nome nao precisa
+      //baixar o .opus. O TAMANHO do registro e o do opus, entao nesse caso
+      //nao faz sentido conferir o tamanho do arquivo.
+      usa_mp3 := False;
+      if not existe then
+      begin
+        usa_mp3 := (fmIndex.audioComAlternativaMp3(completo) <> completo);
+        existe := usa_mp3;
+      end;
 
-
-      if (tamanho >= 0) and (tamanho < DM.qrARQUIVOS_SISTEMA.FieldByName('TAMANHO').AsInteger) then
+      if not existe then
       begin
         Item := lvArquivos.Items.Add;
-        Item.Checked := True;
+        Item.Checked := not existe;
         Item.Caption := DM.qrARQUIVOS_SISTEMA.FieldByName('ARQUIVO').AsString;
         Item.SubItems.Add(url);
-        Item.SubItems.Add('Danificado');
         a_nao := a_nao + 1;
+        Item.SubItems.Add('Não encontrado');
+      end
+      else if usa_mp3 then
+        a_sim := a_sim + 1
+      else if (DM.qrARQUIVOS_SISTEMA.FieldByName('TAMANHO').AsInteger > 0) then
+      begin
+        if (tamanho >= 0) and (tamanho < DM.qrARQUIVOS_SISTEMA.FieldByName('TAMANHO').AsInteger) then
+        begin
+          Item := lvArquivos.Items.Add;
+          Item.Checked := True;
+          Item.Caption := DM.qrARQUIVOS_SISTEMA.FieldByName('ARQUIVO').AsString;
+          Item.SubItems.Add(url);
+          Item.SubItems.Add('Danificado');
+          a_nao := a_nao + 1;
+        end
+        else a_sim := a_sim + 1;
       end
       else a_sim := a_sim + 1;
-    end
-    else a_sim := a_sim + 1;
 
-    gProgresso.Value := DM.qrARQUIVOS_SISTEMA.RecNo;
-    Application.ProcessMessages;
-    DM.qrARQUIVOS_SISTEMA.Next;
+      Inc(lidos);
+      if (lidos mod PASSO_INTERFACE = 0) then
+        mostraProgresso;
+
+      DM.qrARQUIVOS_SISTEMA.Next;
+    end;
+
+  finally
+    lvArquivos.Items.EndUpdate;
   end;
 
+  gProgresso.Value := gProgresso.MaxValue;
   btBaixa.Enabled := True;
   btVerifica.Enabled := True;
   lblStatus.Caption := 'Encontrados: '+inttostr(a_sim)+#13#10+'Em falta/danificado(s): '+inttostr(a_nao);
