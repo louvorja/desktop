@@ -17,6 +17,7 @@ type
     GridPanel3: TGridPanel;
     txtBusca: TbsSkinEdit;
     bsSkinStdLabel5: TbsSkinStdLabel;
+    ckLetra: TbsSkinCheckBox;
     DBGrid1: TbsSkinDBGrid;
     qrBUSCA: TFDQuery;
     dsBUSCA: TDataSource;
@@ -31,10 +32,12 @@ type
     procedure DBGrid1DblClick(Sender: TObject);
     procedure txtBuscaKeyPress(Sender: TObject; var Key: Char);
     procedure FormResize(Sender: TObject);
+    procedure ckLetraClick(Sender: TObject);
     procedure DBGrid1DrawColumnCell(Sender: TObject; const Rect: TRect;
       DataCol: Integer; Column: TbsColumn; State: TGridDrawState);
   private
     { Private declarations }
+    carrega_opc: Boolean;
   public
     { Public declarations }
     id: integer;
@@ -48,6 +51,14 @@ implementation
 {$R *.dfm}
 
 uses fmMenu, dmComponentes;
+
+procedure TfBuscaMusica.ckLetraClick(Sender: TObject);
+begin
+  if carrega_opc then Exit;
+
+  txtBuscaChange(Sender);
+  txtBusca.SetFocus;
+end;
 
 procedure TfBuscaMusica.DBGrid1DblClick(Sender: TObject);
 begin
@@ -115,8 +126,15 @@ end;
 
 procedure TfBuscaMusica.FormActivate(Sender: TObject);
 begin
-  id := -1;
-  txtBusca.Text := '';
+  carrega_opc := True;
+  try
+    id := -1;
+    txtBusca.Text := '';
+    ckLetra.Checked := True;
+  finally
+    carrega_opc := False;
+  end;
+
   txtBuscaChange(Sender);
 end;
 
@@ -155,6 +173,9 @@ begin
 
   qrBUSCA.Close;
   qrBUSCA.ParamByName('VALOR').AsString := fmIndex.termo_busca(valor);
+  if ckLetra.Checked
+    then qrBUSCA.ParamByName('OPC_LETRA').AsString := 'S'
+    else qrBUSCA.ParamByName('OPC_LETRA').AsString := 'N';
   qrBUSCA.Open;
 
   stBusca_1.caption := fmIndex.qtItens(qrBUSCA,'música encontrada','músicas encontrados','Nenhuma música encontrado');
