@@ -97,6 +97,7 @@ object fBuscaMusica: TfBuscaMusica
       RightImageHotIndex = -1
       RightImageDownIndex = -1
       OnChange = txtBuscaChange
+      OnKeyDown = txtBuscaKeyDown
       OnKeyPress = txtBuscaKeyPress
       OnKeyUp = txtBuscaKeyUp
     end

@@ -52640,6 +52640,7 @@ object fmIndex: TfmIndex
           RightImageHotIndex = -1
           RightImageDownIndex = -1
           OnChange = txtBuscaChange
+          OnKeyDown = txtBuscaKeyDown
           OnKeyPress = txtBuscaKeyPress
         end
         object bsSkinStdLabel5: TbsSkinStdLabel
