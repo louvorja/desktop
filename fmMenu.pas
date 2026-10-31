@@ -15,7 +15,7 @@ uses
   Generics.Defaults, FireDAC.Stan.Intf, FireDAC.Stan.Option, FireDAC.Stan.Param,
   FireDAC.Stan.Error, FireDAC.DatS, FireDAC.Phys.Intf, FireDAC.DApt.Intf,
   FireDAC.Stan.Async, FireDAC.DApt, FireDAC.Comp.DataSet, FireDAC.Comp.Client,
-  System.RegularExpressions, System.NetEncoding, System.IOUtils,
+  System.RegularExpressions, System.NetEncoding, System.IOUtils, uLiturgia,
   BusinessSkinForm, bsSkinMenus, bsSkinCtrls, bsSkinTabs, bsButtonGroup,
   bsSkinBoxCtrls, bsSkinExCtrls, bsribbon, bsdbctrls, bsSkinShellCtrls,
   bsSkinGrids, bsDBGrids, bsColorCtrls, bsPngImageList;
@@ -2276,6 +2276,10 @@ type
     procedure garanteUtf8Liturgia;
     function abreIniLiturgia: TMemIniFile;
     function dataDoDiaLiturgia(const diaSemana: string): TDateTime;
+    function caminhoLiturgiaJson: string;
+    function leTextoDeArquivo(const caminho: string): string;
+    function leLiturgiaJson: TLiturgiaArq;
+    procedure gravaLiturgiaJson(doc: TLiturgiaArq);
 
   public
     { Public declarations }
@@ -6885,6 +6889,98 @@ begin
   Result := IncDay(agora, deslocamento);
 end;
 
+function TfmIndex.caminhoLiturgiaJson: string;
+begin
+  Result := dir_dados + ChangeFileExt(arq_liturgia, '.json');
+end;
+
+//Le o arquivo como texto, tolerando quem gravou em ANSI por fora.
+function TfmIndex.leTextoDeArquivo(const caminho: string): string;
+var
+  sl: TStringList;
+  enc1252: TEncoding;
+begin
+  Result := '';
+
+  if not FileExists(caminho) then
+    Exit;
+
+  sl := TStringList.Create;
+  try
+    try
+      sl.LoadFromFile(caminho, TEncoding.UTF8);
+    except
+      enc1252 := TEncoding.GetEncoding(1252);
+      try
+        sl.LoadFromFile(caminho, enc1252);
+      finally
+        enc1252.Free;
+      end;
+    end;
+
+    Result := sl.Text;
+  finally
+    sl.Free;
+  end;
+end;
+
+//Documento da liturgia em JSON, ou nil quando o arquivo nao existe.
+//JSON ilegivel e posto de lado com outro nome e tambem devolve nil, para a
+//leitura cair no INI: devolver documento vazio apagaria a liturgia na
+//gravacao seguinte.
+function TfmIndex.leLiturgiaJson: TLiturgiaArq;
+var
+  caminho, backup: string;
+begin
+  Result := nil;
+  caminho := caminhoLiturgiaJson;
+
+  if not FileExists(caminho) then
+    Exit;
+
+  Result := TLiturgiaArq.criaPara(caminho);
+  try
+    Result.carregaTexto(leTextoDeArquivo(caminho));
+  except
+    on E: Exception do
+    begin
+      FreeAndNil(Result);
+
+      try
+        gravaLog('leLiturgiaJson: ' + caminho + ' - ' + E.ClassName + ' - ' + E.Message);
+      except
+      end;
+
+      try
+        backup := caminho + '.corrupt.' + FormatDateTime('yyyymmddhhnnsszzz', Now);
+        RenameFile(caminho, backup);
+        gravaLog('leLiturgiaJson: JSON ilegivel movido para ' + backup);
+      except
+      end;
+    end;
+  end;
+end;
+
+//Grava trocando o arquivo de uma vez, para nao deixar liturgia pela metade
+//se faltar energia no meio. Mesmo esquema do ramo INI do gravaParamLote.
+procedure TfmIndex.gravaLiturgiaJson(doc: TLiturgiaArq);
+var
+  caminho, temp: string;
+begin
+  caminho := caminhoLiturgiaJson;
+  temp := caminho + '.tmp';
+
+  doc.gravaEm(temp);
+
+  if not MoveFileEx(PChar(temp), PChar(caminho), MOVEFILE_REPLACE_EXISTING) then
+  begin
+    if FileExists(caminho) then
+      DeleteFile(caminho);
+
+    RenameFile(temp, caminho);
+  end;
+end;
+
 function TfmIndex.caminhoLiturgia: string;
 begin
   Result := dir_dados + arq_liturgia;
@@ -6944,7 +7040,15 @@ var
   sl: TStringList;
   enc1252: TEncoding;
   backupPath: string;
+  docJson: TLiturgiaArq;
 begin
+  //Liturgia em JSON tem precedencia sobre o INI. TLiturgiaArq descende de
+  //TMemIniFile, entao quem chama esta funcao nao percebe a diferenca --
+  //inclusive o apagaParam, que termina chamando UpdateFile.
+  docJson := leLiturgiaJson;
+  if (docJson <> nil) then
+    Exit(docJson);
+
   path := caminhoLiturgia;
   try
     // Ensure file is converted to UTF-8 where possible
@@ -7117,6 +7221,7 @@ var
   origPath, tempPath: string;
   origIni, tempIni: TMemIniFile;
   sections, keys: TStringList;
+  docJson: TLiturgiaArq;
 
   var k : integer;
   var backup : string;
@@ -7128,6 +7233,24 @@ begin
   try
     if arq = arq_liturgia then
     begin
+      //Liturgia em JSON: le, aplica e regrava no mesmo formato. Sem isto um
+      //liturgia.json existente seria lido mas nunca atualizado. JSON ilegivel
+      //devolve nil e a gravacao segue pelo INI.
+      docJson := leLiturgiaJson;
+      if (docJson <> nil) then
+      begin
+        try
+          for i := 0 to High(Itens) do
+            docJson.WriteString(Itens[i].Grupo, Itens[i].Param, Itens[i].Valor);
+
+          gravaLiturgiaJson(docJson);
+        finally
+          docJson.Free;
+        end;
+
+        Exit;
+      end;
+
       // Write atomically: copy existing INI to temp, apply changes, write temp and replace
       origPath := dir_dados + arq;
       tempPath := origPath + '.tmp';
