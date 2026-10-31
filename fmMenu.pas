@@ -2275,6 +2275,7 @@ type
     function caminhoLiturgia: string;
     procedure garanteUtf8Liturgia;
     function abreIniLiturgia: TMemIniFile;
+    function dataDoDiaLiturgia(const diaSemana: string): TDateTime;
 
   public
     { Public declarations }
@@ -6346,7 +6347,7 @@ begin
       DM.cdsItensAgendados.Open;
 
       DM.cdsItensAgendados.Filtered := false;
-      if (DM.cdsItensAgendados.Locate('CATEGORIA;DATA', VarArrayOf([lerParam(item, 'id', '', arq_liturgia),IncDay(now(),strtoint(loadCol.Strings.Values['LITURGIA:SEMANA']) - dayofweek(now()))]), []))
+      if (DM.cdsItensAgendados.Locate('CATEGORIA;DATA', VarArrayOf([lerParam(item, 'id', '', arq_liturgia),dataDoDiaLiturgia(loadCol.Strings.Values['LITURGIA:SEMANA'])]), []))
         then slabel.Caption := 'Arquivo '+DM.cdsItensAgendados.FieldByName('ARQUIVO').AsString
         else slabel.Caption := 'Não há arquivo agendado para esta data!';
     end
@@ -6865,6 +6866,23 @@ begin
     link := Copy(link, 0, Pos('#', link) - 1);
 
   result := link;
+end;
+
+//Data da ocorrencia do dia da semana escolhido na liturgia (1=domingo..7=sabado).
+//Dia que ja passou nesta semana aponta para a proxima, nunca para a anterior.
+function TfmIndex.dataDoDiaLiturgia(const diaSemana: string): TDateTime;
+var
+  agora: TDateTime;
+  dia, deslocamento: Integer;
+begin
+  agora := Now();
+  dia := StrToIntDef(diaSemana, DayOfWeek(agora));
+  deslocamento := dia - DayOfWeek(agora);
+
+  if (deslocamento < 0) then
+    deslocamento := deslocamento + 7;
+
+  Result := IncDay(agora, deslocamento);
 end;
 
 function TfmIndex.caminhoLiturgia: string;
@@ -8143,7 +8161,7 @@ begin
         then application.MessageBox(PChar('Categoria '''+lerParam(item, 'item', '', arq_liturgia)+''' não encontrada. Será necessário corrigir este item!'),TITULO,mb_ok+MB_ICONERROR)
         else application.MessageBox(PChar('Não foi encontrado '''+lerParam(item, 'item', '', arq_liturgia)+''' agendado para esta data!'),TITULO,mb_ok+MB_ICONEXCLAMATION);
     end
-    else if (DM.cdsItensAgendados.Locate('CATEGORIA;DATA', VarArrayOf([subitem,IncDay(now(),strtoint(loadCol.Strings.Values['LITURGIA:SEMANA']) - dayofweek(now()))]), [])) then
+    else if (DM.cdsItensAgendados.Locate('CATEGORIA;DATA', VarArrayOf([subitem,dataDoDiaLiturgia(loadCol.Strings.Values['LITURGIA:SEMANA'])]), [])) then
     begin
 
       if (DM.cdsItensAgendados.FieldByName('ARQUIVO_INFO').AsString = 'I')
