@@ -168,6 +168,17 @@ begin
   if not Form.Visible then
     Exit;
 
+  //O programa minimiza pelo Application.Minimize: e o que o botao da janela
+  //chama e tambem onde a VCL cai quando o SC_MINIMIZE vem do form
+  //principal. Com MainFormOnTaskBar desligado -- o padrao da VCL, e este
+  //projeto nunca liga -- quem fica iconizado nessa hora e a JANELA DA
+  //APLICACAO, nao o form. Por isso o IsIconic do form sozinho nao via o
+  //programa minimizado, e nada voltava para a tela.
+  if IsIconic(Application.Handle) then
+    Application.Restore;
+
+  //Form minimizado por conta propria (nao e o caminho do botao, mas custa
+  //uma linha e cobre MainFormOnTaskBar ligado, se um dia for)
   if IsIconic(Form.Handle) then
     ShowWindow(Form.Handle, SW_RESTORE);
 

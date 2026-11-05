@@ -9,22 +9,20 @@
 //JSON, o que mantem correto quem termina a edicao chamando ele (o apagaParam
 //do fmMenu e um desses).
 //
-//O JSON e um objeto de objetos de texto, espelho exato das secoes e chaves
-//do INI:
+//O JSON e o FORMATO DE TROCA do uLiturgiaTroca -- o mesmo que a exportacao
+//grava e a importacao le. Isso e requisito, nao coincidencia: o usuario tem
+//de poder copiar um arquivo exportado para dentro de %APPDATA%\LouvorJA e o
+//programa passar a usar ele, sem converter nada. Por isso esta unit NAO tem
+//formato proprio: ela delega para o uLiturgiaTroca, que e quem conhece o
+//envelope.
 //
-//  {
-//    "Geral":  { "1": "item_a;item_b" },
-//    "item_a": { "tipo": "musica", "musica": "1234" }
-//  }
-//
-//Todo valor e gravado como texto, para o ida-e-volta ser exato: gravar "01"
-//como numero devolveria "1". Na leitura, numero e booleano sao aceitos e
-//convertidos, para tolerar arquivo escrito por outra ferramenta.
+//A chave reservada "_secoes" e a unica coisa que esta unit acrescenta ao
+//envelope, e so aparece numa janela curta. Ver secoesSoltasJson.
 //
 //PORTE (secao 5b do CLAUDE.md): a gravacao e escrita a mao e nao depende de
 //biblioteca de JSON nenhuma. A dependencia de System.JSON esta num unico
-//lugar, o metodo carregaJson. No Lazarus/FPC so ele muda, para fpjson +
-//jsonparser. Fora disso a unit nao usa VCL nem Windows.
+//lugar, o metodo carregaSecoesSoltas. No Lazarus/FPC so ele muda, para
+//fpjson + jsonparser. Fora disso a unit nao usa VCL nem Windows.
 
 interface
 
@@ -37,6 +35,8 @@ type
   TLiturgiaArq = class(TMemIniFile)
   private
     procedure carregaJson(const texto: string);
+    procedure carregaSecoesSoltas(const texto: string);
+    function secoesSoltasJson: string;
   public
     //Documento em memoria guardando o nome do arquivo para o UpdateFile, mas
     //SEM carregar o arquivo: o TMemIniFile leria o JSON como se fosse INI.
@@ -56,24 +56,15 @@ type
 //Qual formato o texto tem, olhando o primeiro caractere que nao e espaco.
 function formatoDeTexto(const texto: string): TFormatoLiturgia;
 
-//Escapa o texto para entrar entre aspas num JSON.
-function escapaTextoJson(const txt: string): string;
-
-//Par "nome": "valor", com os dois escapados. Usado tanto aqui como pelo
-//uLiturgiaTroca, para o escape e o recuo existirem num lugar so.
-function jsonParTexto(const recuo, nome, valor: string): string;
-
-//Par "nome": <bruto>, para numero, booleano, objeto ou array -- o que ja
-//vem pronto em JSON e nao leva aspas.
-function jsonParBruto(const recuo, nome, bruto: string): string;
-
-//Texto de um booleano em JSON.
-function jsonBool(valor: Boolean): string;
-
 implementation
 
 uses
-  System.JSON;
+  System.JSON, uLiturgiaTroca;
+
+const
+  //Chave reservada do envelope, para as secoes que nenhum dia referencia.
+  //Ver secoesSoltasJson.
+  CHAVE_SECOES_SOLTAS = '_secoes';
 
 function formatoDeTexto(const texto: string): TFormatoLiturgia;
 var
@@ -93,51 +84,6 @@ begin
   if (texto[i] = '{')
     then Result := flJson
     else Result := flIni;
-end;
-
-function escapaTextoJson(const txt: string): string;
-var
-  i: Integer;
-  c: Char;
-begin
-  Result := '';
-
-  for i := 1 to Length(txt) do
-  begin
-    c := txt[i];
-
-    case c of
-      '"': Result := Result + '\"';
-      '\': Result := Result + '\\';
-      #8:  Result := Result + '\b';
-      #9:  Result := Result + '\t';
-      #10: Result := Result + '\n';
-      #12: Result := Result + '\f';
-      #13: Result := Result + '\r';
-    else
-      if (c < ' ')
-        then Result := Result + '\u' + LowerCase(IntToHex(Ord(c), 4))
-        else Result := Result + c;
-    end;
-  end;
-end;
-
-function jsonParTexto(const recuo, nome, valor: string): string;
-begin
-  Result := recuo + '"' + escapaTextoJson(nome) + '": "' +
-            escapaTextoJson(valor) + '"';
-end;
-
-function jsonParBruto(const recuo, nome, bruto: string): string;
-begin
-  Result := recuo + '"' + escapaTextoJson(nome) + '": ' + bruto;
-end;
-
-function jsonBool(valor: Boolean): string;
-begin
-  if valor
-    then Result := 'true'
-    else Result := 'false';
 end;
 
 //Valor do JSON como texto. Numero descende de TJSONString, entao cai no
@@ -173,41 +119,148 @@ begin
     Rename(caminho, False);
 end;
 
+//Le o envelope de troca e distribui os itens pelos dias. E o mesmo codigo da
+//importacao, de proposito: o arquivo interno e o arquivo trocado sao um so.
 procedure TLiturgiaArq.carregaJson(const texto: string);
 var
-  raiz: TJSONValue;
-  obj, secao: TJSONObject;
-  nomeSecao: string;
+  col: TColecaoTroca;
+begin
+  col := leJsonTroca(texto);
+  try
+    aplicaColecaoEm(col, Self);
+  finally
+    col.Free;
+  end;
+
+  carregaSecoesSoltas(texto);
+end;
+
+//Secao que nenhum dia referencia volta da chave reservada.
+//
+//Existe uma janela curta e real em que isso acontece: o TfLiturgia.btAddClick
+//grava as chaves do item novo ANTES de o id entrar na lista do [Geral], e o
+//btCopiaLitSelClick faz igual. Nesse instante a secao nao pertence a nenhum
+//dia, e o envelope de troca -- que e uma lista de dias -- nao tem onde poe-la.
+//Sem guardar essas secoes, a gravacao desse instante descartaria o item
+//recem-criado e ele voltaria vazio na tela.
+//
+//Depois da gravacao seguinte o id ja esta no [Geral] e a chave desaparece
+//sozinha, entao um arquivo exportado normalmente nao tem nenhuma.
+procedure TLiturgiaArq.carregaSecoesSoltas(const texto: string);
+var
+  raiz, v: TJSONValue;
+  obj, soltas, secao: TJSONObject;
   i, k: Integer;
 begin
   raiz := TJSONObject.ParseJSONValue(texto);
 
   if (raiz = nil) then
-    raise Exception.Create('Liturgia: nao foi possivel ler o JSON.');
+    Exit;
 
   try
     if not (raiz is TJSONObject) then
-      raise Exception.Create('Liturgia: o JSON precisa comecar com um objeto.');
+      Exit;
 
     obj := TJSONObject(raiz);
+    v := obj.GetValue(CHAVE_SECOES_SOLTAS);
 
-    for i := 0 to obj.Count - 1 do
+    if (v = nil) or not (v is TJSONObject) then
+      Exit;
+
+    soltas := TJSONObject(v);
+
+    for i := 0 to soltas.Count - 1 do
     begin
-      //Chave do primeiro nivel que nao e objeto nao e secao: ignora, em vez
-      //de recusar o arquivo inteiro.
-      if not (obj.Pairs[i].JsonValue is TJSONObject) then
+      if not (soltas.Pairs[i].JsonValue is TJSONObject) then
         Continue;
 
-      nomeSecao := obj.Pairs[i].JsonString.Value;
-      secao := TJSONObject(obj.Pairs[i].JsonValue);
+      secao := TJSONObject(soltas.Pairs[i].JsonValue);
 
       for k := 0 to secao.Count - 1 do
-        WriteString(nomeSecao,
+        WriteString(soltas.Pairs[i].JsonString.Value,
                     secao.Pairs[k].JsonString.Value,
                     valorComoTexto(secao.Pairs[k].JsonValue));
     end;
   finally
     raiz.Free;
+  end;
+end;
+
+//As secoes que nenhum dia referencia, como '  "_secoes": { ... }', prontas
+//para entrar no envelope. Vazio quando nao ha nenhuma, que e o normal.
+function TLiturgiaArq.secoesSoltasJson: string;
+var
+  usadas, secoes, chaves, ids: TStringList;
+  i, k, dia: Integer;
+  corpo, bloco: string;
+begin
+  Result := '';
+
+  usadas := TStringList.Create;
+  secoes := TStringList.Create;
+  try
+    usadas.CaseSensitive := False;
+
+    for dia := PRIMEIRO_DIA to ULTIMO_DIA do
+    begin
+      ids := TStringList.Create;
+      try
+        ids.Delimiter := ';';
+        ids.StrictDelimiter := True;
+        ids.DelimitedText := ReadString('Geral', IntToStr(dia), '');
+
+        for k := 0 to ids.Count - 1 do
+          if (Trim(ids[k]) <> '') then
+            usadas.Add(Trim(ids[k]));
+      finally
+        ids.Free;
+      end;
+    end;
+
+    ReadSections(secoes);
+    corpo := '';
+
+    for i := 0 to secoes.Count - 1 do
+    begin
+      //O [Geral] nunca viaja: a ordem dos dias e o AlteraOrdem sao
+      //reconstruidos pelo aplicaEm a partir da estrutura do envelope.
+      if SameText(secoes[i], 'Geral') or (usadas.IndexOf(secoes[i]) >= 0) then
+        Continue;
+
+      bloco := '    "' + escapaTextoJson(secoes[i]) + '": {' + sLineBreak;
+
+      chaves := TStringList.Create;
+      try
+        ReadSection(secoes[i], chaves);
+
+        for k := 0 to chaves.Count - 1 do
+        begin
+          bloco := bloco + jsonParTexto('      ', chaves[k],
+                                        ReadString(secoes[i], chaves[k], ''));
+
+          if (k < chaves.Count - 1) then
+            bloco := bloco + ',';
+
+          bloco := bloco + sLineBreak;
+        end;
+      finally
+        chaves.Free;
+      end;
+
+      bloco := bloco + '    }';
+
+      if (corpo <> '') then
+        corpo := corpo + ',' + sLineBreak;
+
+      corpo := corpo + bloco;
+    end;
+
+    if (corpo <> '') then
+      Result := '  "' + CHAVE_SECOES_SOLTAS + '": {' + sLineBreak
+              + corpo + sLineBreak + '  }';
+  finally
+    secoes.Free;
+    usadas.Free;
   end;
 end;
 
@@ -293,47 +346,14 @@ end;
 
 function TLiturgiaArq.comoJson: string;
 var
-  secoes, chaves: TStringList;
-  i, k: Integer;
-  linha: string;
+  col: TColecaoTroca;
 begin
-  Result := '{' + sLineBreak;
-
-  secoes := TStringList.Create;
+  col := colecaoDoArquivo(Self);
   try
-    ReadSections(secoes);
-
-    for i := 0 to secoes.Count - 1 do
-    begin
-      Result := Result + '  "' + escapaTextoJson(secoes[i]) + '": {' + sLineBreak;
-
-      chaves := TStringList.Create;
-      try
-        ReadSection(secoes[i], chaves);
-
-        for k := 0 to chaves.Count - 1 do
-        begin
-          linha := jsonParTexto('    ', chaves[k],
-                               ReadString(secoes[i], chaves[k], ''));
-
-          if (k < chaves.Count - 1) then
-            linha := linha + ',';
-
-          Result := Result + linha + sLineBreak;
-        end;
-      finally
-        chaves.Free;
-      end;
-
-      if (i < secoes.Count - 1)
-        then Result := Result + '  },' + sLineBreak
-        else Result := Result + '  }' + sLineBreak;
-    end;
+    Result := col.comoJson(secoesSoltasJson);
   finally
-    secoes.Free;
+    col.Free;
   end;
-
-  Result := Result + '}' + sLineBreak;
 end;
 
 function TLiturgiaArq.comoIni: string;

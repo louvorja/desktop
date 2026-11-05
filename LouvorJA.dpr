@@ -45,7 +45,8 @@ uses
   uInstanciaUnica in 'uInstanciaUnica.pas',
   uArquivosWeb in 'uArquivosWeb.pas',
   uLiturgia in 'uLiturgia.pas',
-  uLiturgiaTroca in 'uLiturgiaTroca.pas';
+  uLiturgiaTroca in 'uLiturgiaTroca.pas',
+  uLiturgiaLlja in 'uLiturgiaLlja.pas';
 
 {$R *.res}
 

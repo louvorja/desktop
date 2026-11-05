@@ -13,8 +13,12 @@
 //zip, o outro de um arquivo.
 //
 //O dia da semana difere nos dois lados: 1..7 no INI (1 = domingo, conforme
-//NOMES_DIAS de fmCopiaLiturgiaDia.pas) e 0..6 no JSON. A conversao esta em
+//NOMES_DIAS desta unit) e 0..6 no JSON. A conversao esta em
 //diaParaJson / diaDoJson e em lugar nenhum mais.
+//
+//Esta unit e a camada de baixo: ela sabe o formato e nao sabe de arquivo.
+//Quem le e grava o liturgia.json e o uLiturgia, que depende desta -- de mao
+//unica, por isso os ajudantes de escrita de JSON moram aqui.
 //
 //PORTE (secao 5b do CLAUDE.md): as unicas dependencias de fora da RTL sao
 //StringToColor, ColorToString e ColorToRGB, usadas pelas duas funcoes de cor;
@@ -24,8 +28,7 @@
 interface
 
 uses
-  System.Classes, System.SysUtils, System.IniFiles, System.UITypes,
-  uLiturgia;
+  System.Classes, System.SysUtils, System.IniFiles, System.UITypes;
 
 const
   //Versao do formato. Valor diferente deste recusa o arquivo; ausente e lido
@@ -36,6 +39,27 @@ const
   //dois lados: valor ausente ou invalido cai nele.
   COR_HEX_PADRAO = '#00004F';
   COR_INI_PADRAO = '$004F0000';
+
+  //Dia da guia Avulsa: um oitavo dia, que NAO pertence a semana. E uma
+  //liturgia como qualquer outra, so que sem dia da semana nenhum.
+  DIA_AVULSA = 8;
+  PRIMEIRO_DIA = 1;
+  ULTIMO_DIA = DIA_AVULSA;
+
+  //Tipo de vinculo do dia avulso. E extensao nossa: o formato de troca so
+  //conhece day_of_week (0..6), date e thirteenth_sabbath, e nenhum deles
+  //representa "dia fora da semana". Sem isto a Avulsa nao viajaria no
+  //liturgia.json e seria perdida na primeira gravacao.
+  VINCULO_AVULSA = 'avulsa';
+
+  //Nomes dos dias no dominio do INI (1 = domingo), usados no "name" de cada
+  //liturgia. Ficam aqui, na unit pura, para existirem num lugar so -- antes
+  //viviam na implementation do fmCopiaLiturgiaDia e ninguem alcancava.
+  NOMES_DIAS: array[PRIMEIRO_DIA..ULTIMO_DIA] of string = (
+    'Domingo', 'Segunda-feira', 'Terça-feira',
+    'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado',
+    'Avulsa'
+  );
 
 type
   //Um item da liturgia: as chaves do INI, na ordem em que vieram.
@@ -119,7 +143,11 @@ type
     function liturgia(i: Integer): TLiturgiaTroca;
 
     //Envelope de colecao: { schema, exportedAt, liturgies: [...] }.
-    function comoJson: string;
+    //
+    //extraJson entra depois de "liturgies", ja formatado como
+    //'  "chave": ...'. E a costura que o uLiturgia usa para levar no mesmo
+    //arquivo as secoes que nenhum dia referencia ainda.
+    function comoJson(const extraJson: string = ''): string;
   end;
 
 //Le o JSON de troca nas duas formas de envelope. Liturgia unica devolve uma
@@ -145,6 +173,30 @@ function tipoDoJson(const tipoJson: string): string;
 function diaParaJson(dia: Integer): Integer;
 function diaDoJson(dia: Integer): Integer;
 
+//A liturgia INTEIRA do arquivo interno como colecao: uma entrada por dia
+//que tem itens, cada uma com o vinculo de dia da semana. E o formato do
+//liturgia.json interno e tambem o que a exportacao grava -- sao o mesmo
+//arquivo, de proposito, para o usuario poder so copiar um no lugar do outro.
+function colecaoDoArquivo(doc: TCustomIniFile): TColecaoTroca;
+
+//Aplica cada liturgia da colecao no dia do seu vinculo, substituindo o que
+//havia naquele dia. Devolve quantas entraram; sem vinculo de dia da semana a
+//liturgia e ignorada, porque nao ha como saber o destino.
+function aplicaColecaoEm(col: TColecaoTroca; doc: TCustomIniFile): Integer;
+
+//Escapa o texto para entrar entre aspas num JSON.
+function escapaTextoJson(const txt: string): string;
+
+//Par "nome": "valor", com os dois escapados.
+function jsonParTexto(const recuo, nome, valor: string): string;
+
+//Par "nome": <bruto>, para numero, booleano, objeto ou array -- o que ja
+//vem pronto em JSON e nao leva aspas.
+function jsonParBruto(const recuo, nome, bruto: string): string;
+
+//Texto de um booleano em JSON.
+function jsonBool(valor: Boolean): string;
+
 implementation
 
 uses
@@ -164,6 +216,55 @@ const
   //entao no JSON a categoria viaja com nome proprio.
   CHAVE_CATEGORIA_INI = 'id';
   CHAVE_CATEGORIA_JSON = 'id_categoria';
+
+{ ----------------------------------------------------- escrita de JSON }
+
+function escapaTextoJson(const txt: string): string;
+var
+  i: Integer;
+  c: Char;
+begin
+  Result := '';
+
+  for i := 1 to Length(txt) do
+  begin
+    c := txt[i];
+
+    case c of
+      '"': Result := Result + '\"';
+      '\': Result := Result + '\\';
+      #8:  Result := Result + '\b';
+      #9:  Result := Result + '\t';
+      #10: Result := Result + '\n';
+      #12: Result := Result + '\f';
+      #13: Result := Result + '\r';
+    else
+      if (c < ' ')
+        then Result := Result + '\u' + LowerCase(IntToHex(Ord(c), 4))
+        else Result := Result + c;
+    end;
+  end;
+end;
+
+function jsonParTexto(const recuo, nome, valor: string): string;
+begin
+  Result := recuo + '"' + escapaTextoJson(nome) + '": "' +
+            escapaTextoJson(valor) + '"';
+end;
+
+function jsonParBruto(const recuo, nome, bruto: string): string;
+begin
+  Result := recuo + '"' + escapaTextoJson(nome) + '": ' + bruto;
+end;
+
+function jsonBool(valor: Boolean): string;
+begin
+  if valor
+    then Result := 'true'
+    else Result := 'false';
+end;
+
+{ ------------------------------------------------------------- apoio }
 
 function estaEm(const s: string; const lista: array of string): Boolean;
 var
@@ -495,7 +596,13 @@ var
 begin
   Result := 0;
 
-  if (not vinculo.presente) or (not SameText(vinculo.tipo, 'day_of_week')) then
+  if not vinculo.presente then
+    Exit;
+
+  if SameText(vinculo.tipo, VINCULO_AVULSA) then
+    Exit(DIA_AVULSA);
+
+  if not SameText(vinculo.tipo, 'day_of_week') then
     Exit;
 
   d := StrToIntDef(Trim(vinculo.valor), -1);
@@ -629,7 +736,7 @@ begin
   Result := TLiturgiaTroca(FLiturgias.Objects[i]);
 end;
 
-function TColecaoTroca.comoJson: string;
+function TColecaoTroca.comoJson(const extraJson: string): string;
 var
   i: Integer;
 begin
@@ -638,26 +745,33 @@ begin
           + jsonParTexto('  ', 'exportedAt', agoraIso) + ',' + sLineBreak
           + '  "liturgies": [';
 
-  if (FLiturgias.Count = 0) then
-    Exit(Result + ']' + sLineBreak + '}' + sLineBreak);
-
-  Result := Result + sLineBreak;
-
-  for i := 0 to FLiturgias.Count - 1 do
+  if (FLiturgias.Count > 0) then
   begin
-    //Cada entrada leva o seu proprio binding: e assim que o dia da semana
-    //viaja no backup, porque o envelope nao tem campo de dia.
-    Result := Result + '    {' + sLineBreak
-                     + liturgia(i).corpoJson('      ', True)
-                     + '    }';
-
-    if (i < FLiturgias.Count - 1) then
-      Result := Result + ',';
-
     Result := Result + sLineBreak;
-  end;
 
-  Result := Result + '  ]' + sLineBreak + '}' + sLineBreak;
+    for i := 0 to FLiturgias.Count - 1 do
+    begin
+      //Cada entrada leva o seu proprio binding: e assim que o dia da semana
+      //viaja, porque o envelope nao tem campo de dia.
+      Result := Result + '    {' + sLineBreak
+                       + liturgia(i).corpoJson('      ', True)
+                       + '    }';
+
+      if (i < FLiturgias.Count - 1) then
+        Result := Result + ',';
+
+      Result := Result + sLineBreak;
+    end;
+
+    Result := Result + '  ]';
+  end
+  else
+    Result := Result + ']';
+
+  if (Trim(extraJson) <> '') then
+    Result := Result + ',' + sLineBreak + extraJson;
+
+  Result := Result + sLineBreak + '}' + sLineBreak;
 end;
 
 { ----------------------------------------------------------------- leitura }
@@ -705,7 +819,8 @@ begin
   //Tipo que nao conhecemos e preservado como veio e tratado como sem regra.
   //Nunca recusa o arquivo -- a recusa e so do schema.
   if not (SameText(vinc.tipo, 'day_of_week') or SameText(vinc.tipo, 'date') or
-          SameText(vinc.tipo, 'thirteenth_sabbath')) then
+          SameText(vinc.tipo, 'thirteenth_sabbath') or
+          SameText(vinc.tipo, VINCULO_AVULSA)) then
     vinc.bruto := o.ToString;
 end;
 
@@ -820,7 +935,10 @@ begin
   if (Result.valor('cor') = '') then
     Result.poe('cor', COR_INI_PADRAO);
 
-  if (Result.valor('dir_info') = '') then
+  //So o tipo arquivo usa dir_info. Preencher em todo item encheria a
+  //secao de chave inutil e sujaria a reexportacao.
+  if SameText(Result.valor('tipo'), 'arquivo') and
+     (Result.valor('dir_info') = '') then
     Result.poe('dir_info', 'E');
 
   normalizaMusica(Result);
@@ -907,8 +1025,11 @@ begin
         raise Exception.Create(
           'Este arquivo nao parece ser uma liturgia: falta "items" ou "liturgies".');
 
-      if (Result.liturgias.Count = 0) then
-        raise Exception.Create('Liturgia: o arquivo nao tem nenhuma liturgia.');
+      //Colecao vazia NAO e erro: liturgia sem nenhum dia preenchido e um
+      //estado legitimo do arquivo interno, e recusar aqui fazia o
+      //leLiturgiaJson mandar o proprio arquivo do usuario para .corrupt.
+      //Arquivo que nao e liturgia continua recusado acima, por nao ter
+      //nem "items" nem "liturgies".
     except
       Result.Free;
       raise;
@@ -945,11 +1066,19 @@ begin
         if (ident = '') then
           Continue;
 
-        it := Result.adicionaItem(ident);
-
         chaves := TStringList.Create;
         try
           doc.ReadSection(ident, chaves);
+
+          //Id citado na ordem com secao VAZIA e fantasma, nao item: e
+          //sobra de gravacao pela metade -- o apagaParam apaga a secao
+          //antes de a ordem deixar de citar o id. Emitir item aqui o
+          //eternizaria, porque ele sai no manifesto sem chave nenhuma e
+          //volta do leItem como anotacao em branco.
+          if (chaves.Count = 0) then
+            Continue;
+
+          it := Result.adicionaItem(ident);
 
           for k := 0 to chaves.Count - 1 do
             it.poe(chaves[k], doc.ReadString(ident, chaves[k], ''));
@@ -966,6 +1095,78 @@ begin
   except
     Result.Free;
     raise;
+  end;
+end;
+
+{ ------------------------------------------------- a liturgia inteira }
+
+function colecaoDoArquivo(doc: TCustomIniFile): TColecaoTroca;
+var
+  dia: Integer;
+  lit: TLiturgiaTroca;
+begin
+  Result := TColecaoTroca.Create;
+  try
+    for dia := PRIMEIRO_DIA to ULTIMO_DIA do
+    begin
+      if (Trim(doc.ReadString('Geral', IntToStr(dia), '')) = '') then
+        Continue;
+
+      lit := liturgiaDoDia(doc, dia, NOMES_DIAS[dia]);
+      try
+        //Dia que tem a chave no [Geral] mas nenhum item nao merece entrada.
+        if (lit.itens.Count = 0) then
+        begin
+          FreeAndNil(lit);
+          Continue;
+        end;
+
+        lit.corHex := COR_HEX_PADRAO;
+        lit.vinculo.presente := True;
+        lit.vinculo.bruto := '';
+
+        if (dia = DIA_AVULSA) then
+        begin
+          lit.vinculo.tipo := VINCULO_AVULSA;
+          lit.vinculo.valor := '';
+        end
+        else
+        begin
+          lit.vinculo.tipo := 'day_of_week';
+          lit.vinculo.valor := IntToStr(diaParaJson(dia));
+        end;
+
+        Result.adiciona(lit);
+        lit := nil;
+      except
+        lit.Free;
+        raise;
+      end;
+    end;
+  except
+    Result.Free;
+    raise;
+  end;
+end;
+
+function aplicaColecaoEm(col: TColecaoTroca; doc: TCustomIniFile): Integer;
+var
+  i, dia: Integer;
+begin
+  Result := 0;
+
+  if (col = nil) then
+    Exit;
+
+  for i := 0 to col.liturgias.Count - 1 do
+  begin
+    dia := col.liturgia(i).diaDoVinculo;
+
+    if (dia < PRIMEIRO_DIA) or (dia > ULTIMO_DIA) then
+      Continue;
+
+    col.liturgia(i).aplicaEm(doc, dia);
+    Inc(Result);
   end;
 end;
 

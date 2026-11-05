@@ -83,10 +83,12 @@ var
   lista: TStringList;
   Flags: Cardinal;
   externo: Boolean;
+  llja: Boolean;
   TITULO: PChar;
 begin
   Timer1.Enabled := False;
   externo := False;
+  llja := False;
 
   paramexec.Strings.Text := StringReplace(paramstr(2), ';' ,#13#10, [rfIgnoreCase, rfReplaceAll]);
 
@@ -116,7 +118,14 @@ begin
   if FileExists(ParamStr(1)) then
   begin
     lblInfo.Caption := Translate('Abrindo arquivo...');
-    externo := True;
+
+    //Liturgia em arquivo NAO e "abrir so para projetar": o usuario vai
+    //trabalhar nela. Entao o programa inicia por inteiro -- inclusive o
+    //laco que esconde as abas, que so existe no ramo normal -- e o
+    //arquivo e aberto no fim, com a interface montada.
+    llja := SameText(ExtractFileExt(ParamStr(1)), '.llja');
+    externo := not llja;
+
     application.ProcessMessages;
   end;
 
@@ -403,6 +412,13 @@ begin
     //**CHECA VERSÃO E NOVAS VERSÕES********************************************
     fmIndex.gravaParam('Config','VersaoExe',fmIndex.VersaoExe);
     DM.tmrVersao.Enabled := True;
+
+
+    //**ABRE A LITURGIA RECEBIDA************************************************
+    //Com a interface pronta. Arquivo ruim nao encerra o programa: aqui ha
+    //uma sessao inteira para preservar, diferente do ramo externo.
+    if llja then
+      fmIndex.processaArquivo(ParamStr(1), False);
 
     fmIndex.carrega_opc := true;
   end;

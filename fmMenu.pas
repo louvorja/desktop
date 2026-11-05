@@ -16,10 +16,16 @@ uses
   FireDAC.Stan.Error, FireDAC.DatS, FireDAC.Phys.Intf, FireDAC.DApt.Intf,
   FireDAC.Stan.Async, FireDAC.DApt, FireDAC.Comp.DataSet, FireDAC.Comp.Client,
   System.RegularExpressions, System.NetEncoding, System.IOUtils, uLiturgia,
+  uLiturgiaTroca, uLiturgiaLlja,
   BusinessSkinForm, bsSkinMenus, bsSkinCtrls, bsSkinTabs, bsButtonGroup,
   bsSkinBoxCtrls, bsSkinExCtrls, bsribbon, bsdbctrls, bsSkinShellCtrls,
   bsSkinGrids, bsDBGrids, bsColorCtrls, bsPngImageList;
   (*"MidasLib" NECESSÁRIA PARA EVITAR ERRO DE ACCESS VIOLATION NO DM.cds*)
+
+const
+  //Faixa WM_APP, reservada à aplicação: o BusinessSkinForm usa WM_USER
+  //para mensagens próprias dele. O fmMusica já ocupa o +17.
+  WM_SINCRONIZA_AVULSA = WM_APP + 18;
 
 type
   TMonitorInfo = record
@@ -463,6 +469,9 @@ type
     bsRibbonDivider43: TbsRibbonDivider;
     btCopiaLitSel: TbsSkinSpeedButton;
     btApagaLitSel: TbsSkinSpeedButton;
+    grpLitArquivo: TbsRibbonGroup;
+    btImportaLiturgia: TbsSkinSpeedButton;
+    btExportaLiturgia: TbsSkinSpeedButton;
     imgCrono: TImage;
     imgEscSB: TImage;
     lmdEscSb: TLabel;
@@ -657,6 +666,8 @@ type
     lcal_6: TbsSkinSpeedButton;
     lcal_7: TbsSkinSpeedButton;
     lcal_1: TbsSkinSpeedButton;
+    lcal_8: TbsSkinSpeedButton;
+    divLitAvulsa: TbsRibbonDivider;
     bsRibbonDivider9: TbsRibbonDivider;
     bsRibbonDivider13: TbsRibbonDivider;
     bsRibbonDivider15: TbsRibbonDivider;
@@ -1882,6 +1893,8 @@ type
     procedure bsSkinSpeedButton55Click(Sender: TObject);
     procedure btCopiaLitSelClick(Sender: TObject);
     procedure btApagaLitSelClick(Sender: TObject);
+    procedure btImportaLiturgiaClick(Sender: TObject);
+    procedure btExportaLiturgiaClick(Sender: TObject);
     procedure bsSkinSpeedButton58Click(Sender: TObject);
     procedure bsSkinButton25Click(Sender: TObject);
     procedure atualiza_coletaneas_web(p: string; id: string = '');
@@ -2077,6 +2090,8 @@ type
     procedure carregaComboFormatoTempo(combo:TbsSkinComboBox;formato:string);
     function openDialog(tipo:string = '';filtros:string = '';param:string = '';multiplos:boolean = False;diretorio_inicial:string = '';titulo_dialog: string = '';nome_arquivo:string = ''):string;
     function saveDialog(tipo:string = '';filtros:string = '';param:string = '';diretorio_inicial:string = '';titulo_dialog: string = '';nome_arquivo:string = ''):string;
+    function pastaInicialSeletorLiturgia: string;
+    function liturgiaAvulsaAberta: Boolean;
     procedure bsSkinButton43Click(Sender: TObject);
     procedure bsAppMenu1Items7Click(Sender: TObject);
     procedure btExecSQLClick(Sender: TObject);
@@ -2226,6 +2241,15 @@ type
     move: Boolean;
     FLogChamadas: Integer;  // contador para checagem de truncamento do louvorja.log
     arquivo_recebido: string;  // caminho enviado por outra instância (WM_COPYDATA)
+    //Pacote .llja aberto pelo Windows nesta sessão. Vazio = a guia Avulsa
+    //mostra o pacote guardado.
+    lljaSessao: string;
+    //Trava de reentrância: a sincronização grava na liturgia, e gravar na
+    //liturgia chama a sincronização.
+    sincronizandoAvulsa: Boolean;
+    //Pedido de sincronização já postado e ainda não atendido. É o que
+    //junta as gravações de uma ação numa regravação só do pacote.
+    avulsaPendente: Boolean;
 
     const
       VERSAO_MIN_BD: integer = 140;
@@ -2241,6 +2265,11 @@ type
 
     //Aceita arquivos arrastados do Windows Explorer (drop na aba Liturgia)
     procedure WMDropFiles(var Msg: TWMDropFiles); message WM_DROPFILES;
+
+    //Regrava o .llja da Avulsa depois que a ação que mexeu na liturgia
+    //terminou. Nunca durante ela: ver pedeSincronizaAvulsa.
+    procedure WMSincronizaAvulsa(var Msg: TMessage);
+      message WM_SINCRONIZA_AVULSA;
 
 
     //Atende o pedido de outra instância para trazer esta janela para frente
@@ -2280,6 +2309,29 @@ type
     function leTextoDeArquivo(const caminho: string): string;
     function leLiturgiaJson: TLiturgiaArq;
     procedure gravaLiturgiaJson(doc: TLiturgiaArq);
+    procedure importaArquivoLiturgia;
+    procedure exportaArquivoLiturgia;
+    function diaLiturgiaAberto: Integer;
+    function pastaLiturgiasLlja: string;
+    function caminhoLljaAvulsa: string;
+    function pastaExtracaoAvulsa: string;
+    procedure limpaExtracaoAvulsa;
+    procedure garanteArquivosAvulsa;
+    function pastaArquivosAvulsa: string;
+    function pacoteAvulsaAtivo: string;
+    procedure limpaDiaAvulsa;
+    procedure carregaPacoteAvulsa(const origem: string; sessao: Boolean);
+    procedure sincronizaAvulsaNoPacote(atualizaTela: Boolean = True);
+    procedure pedeSincronizaAvulsa;
+    procedure encerraSincronizaAvulsa;
+    procedure abreLljaExterno(const arq: string);
+    function caminhoAbsolutoItemLiturgia(const dir, dirInfo: string): string;
+    procedure converteItemAgendadoParaArquivo(it: TItemTroca; dia: Integer;
+      avisos: TStringList);
+    function confirmaExportacaoLlja(avisos, pastas,
+      semArquivo: TStringList): Boolean;
+    function exportaLiturgiaLlja(dia: Integer): Boolean;
+    function importaLiturgiaLlja: Boolean;
 
   public
     { Public declarations }
@@ -2425,6 +2477,11 @@ begin
   DragAcceptFiles(Self.Handle, False);
   RichEdit1Exit(Sender);
   usaFontes(false);
+
+  //Antes de o dir_temp ir embora: pedido pendente ainda é mexida que o
+  //pacote não recebeu.
+  encerraSincronizaAvulsa;
+
   RecursiveDelete(dir_temp);
   FreeAndNil(FLitClipboard);
 end;
@@ -3762,7 +3819,7 @@ begin
     ext := LowerCase(ExtractFileExt(url));
     if externo
       then ShellExecute(handle, nil, PChar(url), nil, nil, SW_MAXIMIZE)
-    else if (ext = '.slja') or (ext = '.lja')
+    else if (ext = '.slja') or (ext = '.lja') or (ext = '.llja')
       then processaArquivo(url, sairSeInvalido)
     else if (ckPlayerAudio.Checked)
       and ((ext = '.mp3') or (ext = '.wma') or (ext = '.wav')
@@ -6482,6 +6539,12 @@ var
   i: integer;
 begin
   garanteUtf8Liturgia;
+
+  //Sob demanda, so quando a Avulsa e aberta: extrair na abertura do
+  //programa pagaria o custo toda vez, inclusive para quem nao vai usar.
+  if (semana = DIA_AVULSA) then
+    garanteArquivosAvulsa;
+
   itens := TStringList.Create;
   itens.Delimiter := ';';
   itens.DelimitedText := lerParam('Geral', IntToStr(semana), '', arq_liturgia);
@@ -6881,6 +6944,13 @@ var
 begin
   agora := Now();
   dia := StrToIntDef(diaSemana, DayOfWeek(agora));
+
+  //A guia Avulsa nao e dia da semana nenhum, entao nao ha ocorrencia a
+  //calcular: o unico ancoradouro que faz sentido ali e hoje. Sem isto a
+  //conta devolveria uma data arbitraria para o dia 8.
+  if (dia < PRIMEIRO_DIA) or (dia > 7) then
+    Exit(agora);
+
   deslocamento := dia - DayOfWeek(agora);
 
   if (deslocamento < 0) then
@@ -7213,6 +7283,20 @@ begin
   end;
 end;
 
+//True quando o lote so mexe no "concluido hoje" do item. Marcar e desmarcar
+//e a acao mais frequente durante o culto, e nao muda o conteudo da liturgia
+//-- regravar o pacote da Avulsa a cada clique seria caro a toa.
+function soMarcacao(const Itens: array of TParamItem): Boolean;
+var
+  i: Integer;
+begin
+  Result := Length(Itens) > 0;
+
+  for i := Low(Itens) to High(Itens) do
+    if not SameText(Itens[i].Param, 'checked') then
+      Exit(False);
+end;
+
 procedure TfmIndex.gravaParamLote(const Arquivo: string; const Itens: array of TParamItem);
 var
   ArqIni: TCustomIniFile;
@@ -7247,6 +7331,15 @@ begin
         finally
           docJson.Free;
         end;
+
+        //Este ramo termina em Exit, então o gancho do fim da procedure
+        //NÃO alcança ele. Com a liturgia em JSON -- que é o formato novo e
+        //o que o programa passa a gravar -- nenhuma gravação pedia a
+        //sincronização do pacote da Avulsa. Era isso que fazia item novo
+        //sumir ao reiniciar: apagar passa pelo apagaParam, que tem o
+        //gancho dele e sincronizava, e adicionar passa só por aqui.
+        if (arq = arq_liturgia) and not soMarcacao(Itens) then
+          pedeSincronizaAvulsa;
 
         Exit;
       end;
@@ -7344,6 +7437,12 @@ begin
     on E: Exception do
       gravaLog('gravaParamLote(' + arq + '): ' + E.ClassName + ' - ' + E.Message);
   end;
+
+  //A Avulsa mora no .llja, entao o pacote acompanha o que foi gravado. Fora
+  //do try acima de propósito: falha ao regravar o pacote nao pode desfazer a
+  //gravacao da liturgia, que ja aconteceu.
+  if (arq = arq_liturgia) and not soMarcacao(Itens) then
+    pedeSincronizaAvulsa;
 end;
 
 procedure TfmIndex.gravaParam(Grupo, Param, Valor, Arquivo: string);
@@ -7574,6 +7673,9 @@ begin
     on E: Exception do
       gravaLog('apagaParam(' + Arquivo + ',' + Grupo + ',' + Param + '): ' + E.ClassName + ' - ' + E.Message);
   end;
+
+  if (Arquivo = arq_liturgia) then
+    pedeSincronizaAvulsa;
 end;
 
 procedure TfmIndex.cbAlinhamentoCapaProgramaChange(Sender: TObject);
@@ -14004,7 +14106,7 @@ begin
   else
     dia_semana := TComponent(Sender).Tag;
   loadCol.Strings.Values['LITURGIA:SEMANA'] := inttostr(dia_semana);
-  for i := 1 to 7 do
+  for i := PRIMEIRO_DIA to ULTIMO_DIA do
     TbsSkinSpeedButton(FindComponent('lcal_' + inttostr(i)) as TbsSkinSpeedButton).Down := (TbsSkinSpeedButton(FindComponent('lcal_' + inttostr(i)) as TbsSkinSpeedButton).Tag = dia_semana);
 
   RichEdit1.Lines.Clear;
@@ -14547,6 +14649,16 @@ var
   audio: Boolean;
   pronto: string;
 begin
+  //Liturgia em arquivo e outro bicho: nao e pacote de slides. Fica aqui
+  //porque este e o ponto por onde passam OS DOIS caminhos de abertura pelo
+  //Windows -- o fmIniciando (programa fechado) e o abrirArquivo (programa
+  //aberto). Um ramo so cobre os dois.
+  if SameText(ExtractFileExt(arq), '.llja') then
+  begin
+    abreLljaExterno(arq);
+    Exit;
+  end;
+
   pronto := preparaArquivoSlides(arq, audio);
 
   if (pronto <> '') then
@@ -15220,7 +15332,14 @@ begin
       mnFechaAba.Enabled := True;
       mnFechaTodasAbas.Enabled := True;
       PageControl1.Pages[i].Tag := t;
-      bsPopupMenuRibon.Items[t].Tag := t;
+
+      //O menu tem um item por aba visível, inserido pelo abrePagina. Aba
+      //que fique visível sem passar por lá -- como as que vêm visíveis do
+      //.dfm -- deixa as duas listas fora de passo, e aqui isso era um
+      //"List index out of bounds" que derrubava o programa. Marca errada é
+      //menos pior que isso.
+      if (t < bsPopupMenuRibon.Items.Count) then
+        bsPopupMenuRibon.Items[t].Tag := t;
       t := t + 1;
     end;
   end;
@@ -17303,6 +17422,22 @@ var
   arq: string;
 begin
   tag := TComponent(Sender).Tag;
+
+  //A liturgia nao cabe na copia generica dos outros seis: ela tem dois
+  //nomes possiveis no dir_dados (liturgia.json e liturgia.ja) e o arquivo
+  //trocado e o formato de troca, o MESMO do liturgia.json interno.
+  if (tag = 131) then
+  begin
+    importaArquivoLiturgia;
+    Exit;
+  end;
+
+  if (tag = 132) then
+  begin
+    exportaArquivoLiturgia;
+    Exit;
+  end;
+
   arquivos[0] := 'config'+fIniciando.LANG+'.ja';
   arquivos[1] := 'coletaneasUsuario.xml';
   arquivos[2] := 'videosOnUsuario.xml';
@@ -17366,6 +17501,953 @@ begin
       end;
     end;
   end;
+end;
+
+//Importa a liturgia inteira de um arquivo no formato de troca, na linha
+//"Arquivo de Liturgia" do Importar/Exportar Dados.
+//
+//O arquivo importado e gravado como liturgia.json, que e exatamente o que o
+//usuario conseguiria colando o arquivo em %APPDATA%\LouvorJA na mao -- e o
+//mesmo formato, de proposito. Por isso aqui e copia, nao conversao.
+procedure TfmIndex.importaArquivoLiturgia;
+var
+  arq, destino, guardado: string;
+  teste: TColecaoTroca;
+begin
+  if (Application.MessageBox(PChar(
+       'Atenção: a liturgia importada irá sobrepor a que está no sistema. ' +
+       'Deseja continuar?'),
+       TITULO, mb_yesno + MB_ICONQUESTION) <> 6) then
+    Exit;
+
+  arq := openDialog('arquivo',
+    'Liturgia do LouvorJA (*.json)|*.json|Liturgia no formato antigo ' +
+    '(*.ja)|*.ja',
+    'LiturgiaTroca', False, '', 'Importar liturgia', 'liturgia.json');
+
+  if (Trim(arq) = '') then
+    Exit;
+
+  if SameText(ExtractFileExt(arq), '.json') then
+  begin
+    //Confere antes de sobrepor: arquivo que nao e liturgia nao entra.
+    try
+      teste := leJsonTroca(leTextoDeArquivo(arq));
+      teste.Free;
+    except
+      on E: Exception do
+      begin
+        Application.MessageBox(PChar(E.Message), TITULO, mb_ok + MB_ICONERROR);
+        Exit;
+      end;
+    end;
+
+    destino := caminhoLiturgiaJson;
+  end
+  else
+    destino := caminhoLiturgia;
+
+  if not CopyFile(PChar(arq), PChar(destino), False) then
+  begin
+    Application.MessageBox('Não foi possível gravar a liturgia importada!',
+      TITULO, mb_ok + MB_ICONERROR);
+    Exit;
+  end;
+
+  //Importando o formato antigo com um JSON no lugar, o JSON continuaria
+  //ganhando a precedencia e a importacao pareceria nao ter feito nada.
+  if (destino = caminhoLiturgia) and FileExists(caminhoLiturgiaJson) then
+  begin
+    guardado := caminhoLiturgiaJson + '.sobreposto.' +
+                FormatDateTime('yyyymmddhhnnss', Now);
+
+    if not RenameFile(caminhoLiturgiaJson, guardado) then
+    begin
+      Application.MessageBox(PChar(
+        'A liturgia foi copiada, mas o liturgia.json que já existia não pôde ' +
+        'ser movido e continuará sendo usado no lugar dela!'),
+        TITULO, mb_ok + MB_ICONEXCLAMATION);
+      Exit;
+    end;
+  end;
+
+  Application.MessageBox('Liturgia importada com sucesso!', TITULO,
+    mb_ok + mb_iconinformation);
+
+  //Redesenha a tela a partir do arquivo novo. Diferente das outras seis
+  //linhas do Importar/Exportar, aqui nao e preciso reiniciar o programa: a
+  //liturgia e lida do arquivo a cada vez.
+  LiturgiaCalendarClick(nil);
+end;
+
+//Exporta a liturgia inteira como liturgia.json no formato de troca.
+//
+//Quem ja esta no JSON e copia byte a byte; quem esta no liturgia.ja e
+//convertido na saida, para o arquivo exportado ser sempre o formato padrao.
+procedure TfmIndex.exportaArquivoLiturgia;
+var
+  pasta, destino: string;
+  doc: TMemIniFile;
+  saida: TLiturgiaArq;
+begin
+  if not (FileExists(caminhoLiturgiaJson) or FileExists(caminhoLiturgia)) then
+  begin
+    Application.MessageBox('Não há liturgia para ser exportada!', TITULO,
+      mb_ok + mb_iconexclamation);
+    Exit;
+  end;
+
+  Application.MessageBox(
+    'Selecione o diretório onde deverá ser salvo o arquivo ''liturgia.json''!',
+    TITULO, mb_ok + mb_iconinformation);
+
+  pasta := openDialog('pasta');
+
+  if (Trim(pasta) = '') then
+    Exit;
+
+  destino := IncludeTrailingPathDelimiter(pasta) + 'liturgia.json';
+
+  try
+    if FileExists(caminhoLiturgiaJson) then
+    begin
+      if not CopyFile(PChar(caminhoLiturgiaJson), PChar(destino), False) then
+        raise Exception.Create('Não foi possível gravar o arquivo exportado!');
+    end
+    else
+    begin
+      doc := abreIniLiturgia;
+      try
+        saida := TLiturgiaArq.criaPara(destino);
+        try
+          saida.copiaDe(doc);
+          saida.UpdateFile;
+        finally
+          saida.Free;
+        end;
+      finally
+        doc.Free;
+      end;
+    end;
+  except
+    on E: Exception do
+    begin
+      Application.MessageBox(PChar(E.Message), TITULO, mb_ok + MB_ICONERROR);
+      Exit;
+    end;
+  end;
+
+  Application.MessageBox('Liturgia exportada com sucesso!', TITULO,
+    mb_ok + mb_iconinformation);
+end;
+
+{ ------------------------------------------- liturgia de um dia em arquivo }
+
+//Dia que esta aberto na tela de liturgia (1 = domingo, 8 = Avulsa).
+function TfmIndex.diaLiturgiaAberto: Integer;
+begin
+  Result := StrToIntDef(loadCol.Strings.Values['LITURGIA:SEMANA'], DayOfWeek(Now));
+
+  if (Result < PRIMEIRO_DIA) or (Result > ULTIMO_DIA) then
+    Result := DayOfWeek(Now);
+end;
+
+//Onde o .llja importado fica GUARDADO -- permanente, uma liturgia por vez.
+//Nada solto na pasta do programa: subpasta propria, como o desenho pediu.
+function TfmIndex.pastaLiturgiasLlja: string;
+begin
+  Result := IncludeTrailingPathDelimiter(dir_config + 'liturgias');
+end;
+
+function TfmIndex.caminhoLljaAvulsa: string;
+begin
+  Result := pastaLiturgiasLlja + 'avulsa.llja';
+end;
+
+//Onde os arquivos do pacote sao extraidos: DESCARTAVEL, no dir_temp, que o
+//programa apaga na abertura. O caminho e fixo de proposito -- os itens da
+//Avulsa guardam caminho absoluto para ca, e a extracao refeita tem de cair
+//exatamente no mesmo lugar.
+function TfmIndex.pastaExtracaoAvulsa: string;
+begin
+  Result := IncludeTrailingPathDelimiter(
+              IncludeTrailingPathDelimiter(dir_temp + 'liturgia') + 'avulsa');
+end;
+
+procedure TfmIndex.limpaExtracaoAvulsa;
+begin
+  //A guarda existe porque apagar recursivo com o caminho errado seria
+  //estrago grande: so apaga dentro do dir_temp.
+  if (Pos(LowerCase(dir_temp), LowerCase(pastaExtracaoAvulsa)) <> 1) then
+    Exit;
+
+  if not DirectoryExists(pastaExtracaoAvulsa) then
+    Exit;
+
+  try
+    TDirectory.Delete(ExcludeTrailingPathDelimiter(pastaExtracaoAvulsa), True);
+  except
+    on E: Exception do
+      gravaLog('limpaExtracaoAvulsa: ' + E.ClassName + ' - ' + E.Message);
+  end;
+end;
+
+//Onde o seletor de arquivo da liturgia deve abrir. Na guia Avulsa, na pasta
+//dos arquivos do pacote: e de la que o usuario tira o que ja veio dentro do
+//.llja -- inclusive para recuperar item apagado sem querer, ja que o arquivo
+//so sai do pacote no carregamento. Vazio deixa o openDialog decidir.
+function TfmIndex.pastaInicialSeletorLiturgia: string;
+begin
+  Result := '';
+
+  if (diaLiturgiaAberto = DIA_AVULSA) and
+     DirectoryExists(pastaArquivosAvulsa) then
+    Result := pastaArquivosAvulsa;
+end;
+
+//A guia Avulsa mora dentro do .llja. Serve ao fmLiturgia, que precisa saber
+//disso para não oferecer o que não cabe num pacote de arquivos -- o
+//diaLiturgiaAberto é private.
+function TfmIndex.liturgiaAvulsaAberta: Boolean;
+begin
+  Result := (diaLiturgiaAberto = DIA_AVULSA);
+end;
+
+//Pasta onde os arquivos do pacote ficam depois de extraidos.
+function TfmIndex.pastaArquivosAvulsa: string;
+begin
+  Result := IncludeTrailingPathDelimiter(
+              pastaExtracaoAvulsa + PASTA_ARQUIVOS_LLJA);
+end;
+
+//Qual pacote a guia Avulsa esta mostrando: o aberto pelo Windows nesta
+//sessao, se houver, senao o guardado. O da sessao ocupa a guia NO LUGAR do
+//guardado sem tocar nele, entao fechar o programa traz o guardado de volta.
+function TfmIndex.pacoteAvulsaAtivo: string;
+begin
+  if (lljaSessao <> '')
+    then Result := lljaSessao
+    else Result := caminhoLljaAvulsa;
+end;
+
+//Esvazia a guia Avulsa. Sem pacote nenhum ela nao tem o que mostrar, e
+//sobra do que foi aberto na execucao anterior seria mentira.
+procedure TfmIndex.limpaDiaAvulsa;
+var
+  ids: TStringList;
+  i: Integer;
+begin
+  ids := TStringList.Create;
+  try
+    ids.Delimiter := ';';
+    ids.StrictDelimiter := True;
+    ids.DelimitedText := lerParam('Geral', IntToStr(DIA_AVULSA), '', arq_liturgia);
+
+    for i := 0 to ids.Count - 1 do
+      if (Trim(ids[i]) <> '') then
+        apagaParam(Trim(ids[i]), '', arq_liturgia);
+  finally
+    ids.Free;
+  end;
+
+  gravaParam('Geral', IntToStr(DIA_AVULSA), '', arq_liturgia);
+end;
+
+//Abre um pacote e poe o conteudo dele na guia Avulsa.
+//
+//sessao = True quando veio do Windows: o pacote e copiado para o dir_temp e
+//o guardado fica intocado. False quando o usuario importou: ai o guardado e
+//que e substituido.
+procedure TfmIndex.carregaPacoteAvulsa(const origem: string; sessao: Boolean);
+var
+  alvo, texto, novoDir: string;
+  col: TColecaoTroca;
+  lit: TLiturgiaTroca;
+  it: TItemTroca;
+  doc: TMemIniFile;
+  usados: TStringList;
+  extraidos: TStringDynArray;
+  i: Integer;
+  sobrou: Boolean;
+begin
+  if sessao
+    then alvo := IncludeTrailingPathDelimiter(dir_temp + 'liturgia') + 'sessao.llja'
+    else alvo := caminhoLljaAvulsa;
+
+  if not ForceDirectories(ExtractFilePath(alvo)) then
+    raise Exception.Create('Não foi possível criar a pasta ' +
+                           ExtractFilePath(alvo));
+
+  if not SameText(origem, alvo) then
+    if not CopyFile(PChar(origem), PChar(alvo), False) then
+      raise Exception.Create('Não foi possível guardar o arquivo de liturgia!');
+
+  if sessao
+    then lljaSessao := alvo
+    else lljaSessao := '';
+
+  limpaExtracaoAvulsa;
+  texto := abreLlja(alvo, pastaExtracaoAvulsa);
+  col := leJsonTroca(texto);
+  try
+    if (col.liturgias.Count = 0) then
+      raise Exception.Create('Este arquivo não tem nenhuma liturgia!');
+
+    lit := col.liturgia(0);
+    usados := TStringList.Create;
+    try
+      usados.CaseSensitive := False;
+
+      //O L nao sai do pacote: vira caminho absoluto e o item volta a ser um
+      //arquivo comum, que a reprodução já sabe tocar.
+      for i := 0 to lit.itens.Count - 1 do
+      begin
+        it := lit.item(i);
+
+        if not SameText(it.valor('dir_info'), DIR_INFO_LOCAL) then
+          Continue;
+
+        novoDir := resolveDirDoPacote(pastaExtracaoAvulsa, it.valor('dir'));
+
+        if (novoDir = '') then
+        begin
+          //Caminho que escapa da pasta: o item perde o arquivo, de propósito.
+          it.poe('tipo', 'anotacao');
+          it.poe('subitem', 'Arquivo recusado por caminho inválido');
+          it.poe('dir', '');
+          it.poe('dir_info', '');
+          Continue;
+        end;
+
+        it.poe('dir', novoDir);
+        it.poe('dir_info', 'E');
+        it.poe('subitem', 'Arquivo ' + ExtractFileName(novoDir));
+        usados.Add(ExtractFileName(novoDir));
+      end;
+
+      doc := abreIniLiturgia;
+      try
+        lit.aplicaEm(doc, DIA_AVULSA);
+        doc.UpdateFile;
+      finally
+        doc.Free;
+      end;
+
+      //Faxina: arquivo que nenhum item do manifesto usa sai. SO aqui, no
+      //carregamento de verdade -- apagar item na guia nao tira o arquivo do
+      //pacote, para dar chance de recuperar pelo seletor na mesma sessão.
+      sobrou := False;
+
+      if DirectoryExists(pastaArquivosAvulsa) then
+      begin
+        extraidos := TDirectory.GetFiles(pastaArquivosAvulsa);
+
+        for i := Low(extraidos) to High(extraidos) do
+          if (usados.IndexOf(ExtractFileName(extraidos[i])) < 0) then
+          begin
+            DeleteFile(PChar(extraidos[i]));
+            sobrou := True;
+          end;
+      end;
+
+      //O pacote so e regravado quando havia mesmo o que tirar.
+      if sobrou then
+        sincronizaAvulsaNoPacote;
+    finally
+      usados.Free;
+    end;
+  finally
+    col.Free;
+  end;
+end;
+
+//Pede a regravação do pacote, sem fazer nada agora.
+//
+//Uma ação da tela grava a liturgia mais de uma vez: o btAddClick grava as
+//chaves do item e SÓ DEPOIS põe o id na ordem do [Geral]; o
+//apagaItemLiturgia apaga a seção e SÓ DEPOIS tira o id da ordem. Entre as
+//duas gravações o arquivo está inconsistente, e regravar o pacote ali
+//gerava item fantasma -- id na ordem sem seção nenhuma --, que no
+//carregamento seguinte voltava como anotação em branco e ficava.
+//
+//Postando a mensagem, as gravações de uma ação viram UM pedido, atendido
+//quando a ação inteira acabou e o laço de mensagens roda de novo.
+procedure TfmIndex.pedeSincronizaAvulsa;
+begin
+  if avulsaPendente or sincronizandoAvulsa then
+    Exit;
+
+  avulsaPendente := True;
+
+  //Sem janela ainda (gravação durante a criação do form) não há para onde
+  //postar: sincroniza na hora, que nesse momento não tem ação pela metade.
+  if not HandleAllocated then
+  begin
+    avulsaPendente := False;
+    sincronizaAvulsaNoPacote;
+    Exit;
+  end;
+
+  if not PostMessage(Handle, WM_SINCRONIZA_AVULSA, 0, 0) then
+  begin
+    avulsaPendente := False;
+    sincronizaAvulsaNoPacote;
+  end;
+end;
+
+procedure TfmIndex.WMSincronizaAvulsa(var Msg: TMessage);
+begin
+  avulsaPendente := False;
+  sincronizaAvulsaNoPacote;
+end;
+
+//Atende um pedido pendente antes de o programa fechar e levar o dir_temp
+//com ele. Sem isto a última mexida na Avulsa não chegaria ao pacote, e o
+//carregamento seguinte a desfaria.
+procedure TfmIndex.encerraSincronizaAvulsa;
+begin
+  if not avulsaPendente then
+    Exit;
+
+  avulsaPendente := False;
+
+  //Sem repintar: isto roda no FormDestroy, onde mexer nos painéis da
+  //liturgia seria tocar em controle que já está sendo destruído.
+  sincronizaAvulsaNoPacote(False);
+end;
+
+//Regrava o pacote a partir do que esta na guia Avulsa, que e o que torna o
+//.llja a fonte dela de verdade.
+//
+//Arquivo que o usuario apontou de fora e COPIADO para dentro do pacote e o
+//item passa a apontar para a copia extraida -- assim ele continua tocando
+//agora, sem reabrir nada, e existe na outra máquina.
+procedure TfmIndex.sincronizaAvulsaNoPacote(atualizaTela: Boolean = True);
+var
+  doc: TMemIniFile;
+  lit: TLiturgiaTroca;
+  it: TItemTroca;
+  nomes, origens, jaUsados, redesenha: TStringList;
+  extraidos: TStringDynArray;
+  i: Integer;
+  absoluto, nome, destino, temp, subitemNovo: string;
+begin
+  if sincronizandoAvulsa then
+    Exit;
+
+  //Sem pacote aberto nesta sessão não há o que sincronizar: a guia Avulsa
+  //está vazia ou nem foi aberta.
+  if not DirectoryExists(pastaExtracaoAvulsa) then
+    Exit;
+
+  if not FileExists(pacoteAvulsaAtivo) then
+    Exit;
+
+  sincronizandoAvulsa := True;
+  try
+    doc := abreIniLiturgia;
+    try
+      lit := liturgiaDoDia(doc, DIA_AVULSA, NOMES_DIAS[DIA_AVULSA]);
+    finally
+      doc.Free;
+    end;
+
+    nomes := TStringList.Create;
+    origens := TStringList.Create;
+    jaUsados := TStringList.Create;
+    redesenha := TStringList.Create;
+    try
+      jaUsados.CaseSensitive := False;
+      ForceDirectories(pastaArquivosAvulsa);
+
+      extraidos := TDirectory.GetFiles(pastaArquivosAvulsa);
+      for i := Low(extraidos) to High(extraidos) do
+        jaUsados.Add(ExtractFileName(extraidos[i]));
+
+      for i := 0 to lit.itens.Count - 1 do
+      begin
+        it := lit.item(i);
+
+        if not SameText(it.valor('tipo'), 'arquivo') then
+          Continue;
+
+        absoluto := caminhoAbsolutoItemLiturgia(it.valor('dir'),
+                                                it.valor('dir_info'));
+
+        if (absoluto = '') or not FileExists(absoluto) then
+          Continue;
+
+        nome := nomeDentroDaPasta(absoluto, pastaArquivosAvulsa);
+
+        if (nome = '') then
+        begin
+          //Veio de fora: entra no pacote e o item passa a apontar para cá.
+          nome := nomeLivreNoPacote(jaUsados, ExtractFileName(absoluto));
+          destino := pastaArquivosAvulsa + nome;
+
+          if not CopyFile(PChar(absoluto), PChar(destino), False) then
+            Continue;
+
+          gravaParam(it.ident, 'dir', destino, arq_liturgia);
+          gravaParam(it.ident, 'dir_info', 'E', arq_liturgia);
+        end;
+
+        //O rótulo do item é o subitem, e arquivo que mora no pacote aparece
+        //pelo NOME -- o caminho dentro do dir_temp não diz nada ao operador,
+        //e é pelo nome que ele volta no carregamento seguinte, do manifesto.
+        //Isto vale para os dois ramos: antes só o arquivo vindo de fora era
+        //reescrito, e o escolhido já de dentro da pasta extraída -- que é
+        //onde o seletor da Avulsa abre -- ficava com o caminho completo até
+        //o programa reiniciar.
+        subitemNovo := 'Arquivo ' + nome;
+
+        if (it.valor('subitem') <> subitemNovo) then
+        begin
+          gravaParam(it.ident, 'subitem', subitemNovo, arq_liturgia);
+          redesenha.Add(it.ident);
+        end;
+
+        it.poe('dir', PASTA_ARQUIVOS_LLJA + PathDelim + nome);
+        it.poe('dir_info', DIR_INFO_LOCAL);
+        it.poe('subitem', subitemNovo);
+      end;
+
+      //Entram TODOS os arquivos extraídos, inclusive os que nenhum item usa
+      //agora: é isso que permite recuperar um item apagado sem querer,
+      //pegando o arquivo de volta pelo seletor. A faxina deles é só no
+      //carregamento.
+      extraidos := TDirectory.GetFiles(pastaArquivosAvulsa);
+
+      for i := Low(extraidos) to High(extraidos) do
+      begin
+        nomes.Add(ExtractFileName(extraidos[i]));
+        origens.Add(extraidos[i]);
+      end;
+
+      //Grava num temporário e troca: pacote pela metade seria pior que
+      //não ter gravado.
+      temp := pacoteAvulsaAtivo + '.tmp';
+      gravaLlja(temp, lit.comoJson(True), nomes, origens);
+
+      if not MoveFileEx(PChar(temp), PChar(pacoteAvulsaAtivo),
+                        MOVEFILE_REPLACE_EXISTING) then
+      begin
+        DeleteFile(PChar(pacoteAvulsaAtivo));
+        RenameFile(temp, pacoteAvulsaAtivo);
+      end;
+
+      //O item já foi desenhado antes desta sincronização -- o btAddClick
+      //chama o carregaItemLiturgia e só depois o laço de mensagens atende o
+      //pedido. Sem repintar, o nome curto só apareceria na próxima abertura.
+      //Só repinta o que existe na tela: se outro dia estiver aberto, os
+      //painéis da Avulsa não estão montados.
+      if atualizaTela then
+        for i := 0 to redesenha.Count - 1 do
+          if Assigned(FindComponent(redesenha[i])) then
+            carregaItemLiturgia(redesenha[i]);
+    finally
+      redesenha.Free;
+      jaUsados.Free;
+      origens.Free;
+      nomes.Free;
+      lit.Free;
+    end;
+  except
+    on E: Exception do
+      gravaLog('sincronizaAvulsaNoPacote: ' + E.ClassName + ' - ' + E.Message);
+  end;
+
+  sincronizandoAvulsa := False;
+end;
+
+//Um .llja aberto pelo Windows: ocupa a guia Avulsa nesta sessão, no lugar
+//do pacote guardado, que fica intocado.
+procedure TfmIndex.abreLljaExterno(const arq: string);
+begin
+  //A janela primeiro: duplo clique num .llja é pedido para USAR o programa,
+  //então ele volta para a tela antes de a extração começar -- que leva um
+  //instante num pacote grande -- e um erro de leitura também aparece na
+  //frente, em vez de atrás da janela em que o usuário estava.
+  //
+  //RESTAURA, não maximiza: estando minimizada a janela volta ao tamanho que
+  //o usuário deixou, e nada muda quando ela já está na tela. É a mesma
+  //rotina do WM_LOUVORJA_RESTAURA, e a instância que enviou o arquivo já
+  //autorizou a troca de foco (AllowSetForegroundWindow no uInstanciaUnica).
+  TrazJanelaParaFrente(Self);
+
+  try
+    carregaPacoteAvulsa(arq, True);
+  except
+    on E: Exception do
+    begin
+      Application.MessageBox(PChar(E.Message), TITULO, mb_ok + MB_ICONERROR);
+      Exit;
+    end;
+  end;
+
+  abrePagina(tsLiturgia);
+  LiturgiaCalendarClick(lcal_8);
+end;
+
+//Carrega o pacote da Avulsa uma vez por execução, quando a guia é aberta.
+//A pasta de extração existir significa que isso já aconteceu -- e ela não
+//sobrevive ao fechamento do programa, que limpa o dir_temp.
+procedure TfmIndex.garanteArquivosAvulsa;
+begin
+  if DirectoryExists(pastaExtracaoAvulsa) then
+    Exit;
+
+  if not FileExists(pacoteAvulsaAtivo) then
+  begin
+    limpaDiaAvulsa;
+    Exit;
+  end;
+
+  try
+    carregaPacoteAvulsa(pacoteAvulsaAtivo, False);
+  except
+    on E: Exception do
+      gravaLog('garanteArquivosAvulsa: ' + E.ClassName + ' - ' + E.Message);
+  end;
+end;
+
+//Caminho absoluto de um item de arquivo da liturgia, no mesmo critério que
+//a reprodução usa: I e relativo a pasta do exe, qualquer outro valor e
+//caminho absoluto.
+function TfmIndex.caminhoAbsolutoItemLiturgia(const dir, dirInfo: string): string;
+begin
+  if (Trim(dir) = '') then
+    Exit('');
+
+  if (dirInfo = 'I')
+    then Result := ExtractFilePath(Application.ExeName) + dir
+    else Result := dir;
+end;
+
+//Item agendado guarda a CATEGORIA, e o arquivo sai do calendario pela data.
+//Fora desta maquina nao ha calendario nenhum, entao ele viaja como arquivo
+//fixo -- e por isso o usuario e avisado.
+//
+//A data vem do dia POR PARAMETRO, nunca do LITURGIA:SEMANA: exportando um dia
+//diferente do que esta na tela, o global resolveria o dia errado.
+procedure TfmIndex.converteItemAgendadoParaArquivo(it: TItemTroca; dia: Integer;
+  avisos: TStringList);
+var
+  data: TDateTime;
+  arq: string;
+begin
+  data := dataDoDiaLiturgia(IntToStr(dia));
+
+  if not DM.cdsItensAgendados.Active then
+  begin
+    DM.cdsItensAgendados.CreateDataSet;
+    DM.cdsItensAgendados.IndexName := '';
+    DM.cdsItensAgendados.IndexFieldNames := 'DATA';
+    DM.cdsItensAgendados.LogChanges := False;
+  end;
+
+  if (FileExists(dir_dados + 'itensAgendados.xml')) then
+    DM.cdsItensAgendados.LoadFromFile(dir_dados + 'itensAgendados.xml');
+  DM.cdsItensAgendados.Open;
+  DM.cdsItensAgendados.Filtered := False;
+  try
+    if not DM.cdsItensAgendados.Locate('CATEGORIA;DATA',
+         VarArrayOf([it.valor('id'), data]), []) then
+    begin
+      avisos.Add('- ' + it.valor('item') + ': nada agendado para ' +
+                 FormatDateTime('dd/mm/yyyy', data));
+
+      //Sem arquivo nenhum, item agendado nao tem como virar arquivo. Vira
+      //anotacao para aparecer na liturgia em vez de virar item quebrado.
+      it.poe('tipo', 'anotacao');
+      it.poe('subitem', 'Item agendado sem arquivo na exportação');
+      it.poe('id', '');
+      it.poe('dir', '');
+      it.poe('dir_info', '');
+      Exit;
+    end;
+
+    arq := DM.cdsItensAgendados.FieldByName('ARQUIVO').AsString;
+
+    avisos.Add('- ' + it.valor('item') + ': ' + ExtractFileName(arq) +
+               ' (agendado para ' + FormatDateTime('dd/mm/yyyy', data) + ')');
+
+    it.poe('tipo', 'arquivo');
+    it.poe('subtipo', 'arq');
+    it.poe('dir', arq);
+    it.poe('dir_info',
+           DM.cdsItensAgendados.FieldByName('ARQUIVO_INFO').AsString);
+    it.poe('subitem', 'Arquivo ' + arq);
+
+    //A categoria nao faz sentido num item de arquivo.
+    it.poe('id', '');
+  finally
+    DM.cdsItensAgendados.Filtered := True;
+  end;
+end;
+
+//Uma caixa so para tudo que muda na exportacao. N caixas seria reintroduzir
+//exatamente o que a secao 4e do CLAUDE.md desfez.
+function TfmIndex.confirmaExportacaoLlja(avisos, pastas,
+  semArquivo: TStringList): Boolean;
+var
+  td: TTaskDialog;
+  btSim, btNao: TTaskDialogButtonItem;
+  texto: string;
+
+  procedure Secao(const titulo: string; lista: TStringList;
+    const rodape: string);
+  begin
+    if (lista.Count = 0) then
+      Exit;
+
+    if (texto <> '') then
+      texto := texto + sLineBreak;
+
+    texto := texto + titulo + sLineBreak + lista.Text;
+
+    if (rodape <> '') then
+      texto := texto + rodape + sLineBreak;
+  end;
+begin
+  Result := True;
+
+  if (avisos.Count = 0) and (pastas.Count = 0) and (semArquivo.Count = 0) then
+    Exit;
+
+  texto := '';
+
+  Secao('Itens agendados vão como arquivo fixo:', avisos,
+        'Se a data mudar depois, o arquivo exportado continua sendo esse.');
+
+  Secao('Pasta NÃO é exportada no arquivo de liturgia:', pastas,
+        'Só arquivo entra no pacote. Esses itens continuam apontando para a ' +
+        'pasta original, que pode não existir na outra máquina.');
+
+  Secao('Arquivo não encontrado, não vai no pacote:', semArquivo, '');
+
+  td := TTaskDialog.Create(nil);
+  try
+    td.Caption := TITULO;
+    td.MainIcon := tdiWarning;
+    td.Title := 'Há itens que não viajam exatamente como estão.';
+    td.Text := texto;
+
+    //Sem os botões padrão: Esc equivale a cancelar, que é o seguro.
+    td.CommonButtons := [];
+    td.Flags := td.Flags + [tfAllowDialogCancellation];
+
+    btSim := td.Buttons.Add as TTaskDialogButtonItem;
+    btSim.Caption := 'Exportar assim';
+    btSim.ModalResult := mrYes;
+    btSim.Default := True;
+
+    btNao := td.Buttons.Add as TTaskDialogButtonItem;
+    btNao.Caption := 'Cancelar';
+    btNao.ModalResult := mrCancel;
+
+    td.Execute;
+    Result := (td.ModalResult = mrYes);
+  finally
+    td.Free;
+  end;
+end;
+
+//Exporta a liturgia de UM dia como .llja: o JSON de troca com uma liturgia
+//mais os arquivos que os itens apontam.
+//
+//O dia vem por parametro, nunca do LITURGIA:SEMANA -- ver o comentario do
+//converteItemAgendadoParaArquivo.
+function TfmIndex.exportaLiturgiaLlja(dia: Integer): Boolean;
+var
+  doc: TMemIniFile;
+  lit: TLiturgiaTroca;
+  it: TItemTroca;
+  nomes, origens, avisos, pastas, semArquivo: TStringList;
+  i, k: Integer;
+  dirOrig, absoluto, nomePacote, destino, sugestao: string;
+begin
+  Result := False;
+
+  if (dia < PRIMEIRO_DIA) or (dia > ULTIMO_DIA) then
+    Exit;
+
+  doc := abreIniLiturgia;
+  try
+    lit := liturgiaDoDia(doc, dia, NOMES_DIAS[dia]);
+  finally
+    doc.Free;
+  end;
+
+  nomes := TStringList.Create;
+  origens := TStringList.Create;
+  avisos := TStringList.Create;
+  pastas := TStringList.Create;
+  semArquivo := TStringList.Create;
+  try
+    if (lit.itens.Count = 0) then
+    begin
+      Application.MessageBox(PChar('Não há nada na liturgia de ' +
+        NOMES_DIAS[dia] + ' para exportar!'), TITULO,
+        mb_ok + mb_iconexclamation);
+      Exit;
+    end;
+
+    //Primeiro resolve os itens agendados: eles viram itens de arquivo e daí
+    //entram no empacotamento abaixo como qualquer outro.
+    for i := 0 to lit.itens.Count - 1 do
+    begin
+      it := lit.item(i);
+
+      if SameText(it.valor('tipo'), 'itensagendados') then
+        converteItemAgendadoParaArquivo(it, dia, avisos);
+    end;
+
+    for i := 0 to lit.itens.Count - 1 do
+    begin
+      it := lit.item(i);
+
+      if not SameText(it.valor('tipo'), 'arquivo') then
+        Continue;
+
+      dirOrig := it.valor('dir');
+      absoluto := caminhoAbsolutoItemLiturgia(dirOrig, it.valor('dir_info'));
+
+      //Pasta não cabe num pacote de arquivos. O item NAO pode continuar
+      //sendo arquivo: do outro lado o caminho não existe e clicar nele daria
+      //"Arquivo ou diretório não encontrado". Vira anotação, que é exibível e
+      //diz a verdade. O usuário é avisado em caixa própria.
+      if SameText(it.valor('subtipo'), 'dir') or
+         ((absoluto <> '') and DirectoryExists(absoluto)) then
+      begin
+        pastas.Add('- ' + it.valor('item') + ': ' + dirOrig);
+
+        it.poe('tipo', 'anotacao');
+        it.poe('subitem', 'Pasta não exportada: ' + dirOrig);
+        it.poe('subtipo', '');
+        it.poe('dir', '');
+        it.poe('dir_info', '');
+        Continue;
+      end;
+
+      if (absoluto = '') or not FileExists(absoluto) then
+      begin
+        semArquivo.Add('- ' + it.valor('item') + ': ' + dirOrig);
+        Continue;
+      end;
+
+      //Mesmo arquivo em dois itens viaja uma vez só.
+      k := origens.IndexOf(absoluto);
+
+      if (k >= 0) then
+        nomePacote := nomes[k]
+      else
+      begin
+        nomePacote := nomeLivreNoPacote(nomes, ExtractFileName(absoluto));
+        origens.Add(absoluto);
+      end;
+
+      it.poe('dir', PASTA_ARQUIVOS_LLJA + '\' + nomePacote);
+      it.poe('dir_info', DIR_INFO_LOCAL);
+      it.poe('subitem', 'Arquivo ' + nomePacote);
+    end;
+
+    if not confirmaExportacaoLlja(avisos, pastas, semArquivo) then
+      Exit;
+
+    //A Avulsa nao e dia da semana, entao nao ha data de culto para o nome.
+    if (dia = DIA_AVULSA) then
+      sugestao := 'Liturgia ' + NOMES_DIAS[dia] + '.llja'
+    else
+      sugestao := 'Liturgia ' + NOMES_DIAS[dia] + ' ' +
+                  FormatDateTime('dd-mm-yyyy',
+                                 dataDoDiaLiturgia(IntToStr(dia))) + '.llja';
+
+    destino := saveDialog('arquivo',
+      'Liturgia do LouvorJA (*.llja)|*.llja', 'LiturgiaLlja', '',
+      'Exportar a liturgia de ' + NOMES_DIAS[dia], sugestao);
+
+    if (Trim(destino) = '') then
+      Exit;
+
+    if not SameText(ExtractFileExt(destino), '.llja') then
+      destino := destino + '.llja';
+
+    try
+      gravaLlja(destino, lit.comoJson(True), nomes, origens);
+    except
+      on E: Exception do
+      begin
+        Application.MessageBox(PChar(E.Message), TITULO, mb_ok + MB_ICONERROR);
+        Exit;
+      end;
+    end;
+
+    Result := True;
+
+    Application.MessageBox(PChar('Liturgia de ' + NOMES_DIAS[dia] +
+      ' exportada com ' + IntToStr(nomes.Count) + ' arquivo(s)!'), TITULO,
+      mb_ok + mb_iconinformation);
+  finally
+    semArquivo.Free;
+    pastas.Free;
+    avisos.Free;
+    origens.Free;
+    nomes.Free;
+    lit.Free;
+  end;
+end;
+
+//Importa um .llja para a guia Avulsa, que e o oitavo dia -- o lugar de uma
+//liturgia que chegou de fora e nao pertence a semana montada aqui.
+//
+//O pacote fica GUARDADO em config\liturgias; os arquivos dele vao para o
+//dir_temp e sao reextraidos sob demanda (ver garanteArquivosAvulsa).
+function TfmIndex.importaLiturgiaLlja: Boolean;
+var
+  arq: string;
+begin
+  Result := False;
+
+  arq := openDialog('arquivo', 'Liturgia do LouvorJA (*.llja)|*.llja',
+    'LiturgiaLlja', False, '', 'Importar liturgia de um dia');
+
+  if (Trim(arq) = '') then
+    Exit;
+
+  if (Application.MessageBox(PChar(
+       'A liturgia deste arquivo vai para a guia ' + NOMES_DIAS[DIA_AVULSA] +
+       ', substituindo o que estiver lá. Deseja continuar?'),
+       TITULO, mb_yesno + mb_iconquestion) <> 6) then
+    Exit;
+
+  try
+    carregaPacoteAvulsa(arq, False);
+  except
+    on E: Exception do
+    begin
+      Application.MessageBox(PChar(E.Message), TITULO, mb_ok + MB_ICONERROR);
+      Exit;
+    end;
+  end;
+
+  Result := True;
+
+  Application.MessageBox(PChar('Liturgia importada para a guia ' +
+    NOMES_DIAS[DIA_AVULSA] + '!'), TITULO, mb_ok + mb_iconinformation);
+
+  //Mostra o resultado onde ele caiu, em vez de deixar o usuário procurar.
+  LiturgiaCalendarClick(lcal_8);
+end;
+
+procedure TfmIndex.btImportaLiturgiaClick(Sender: TObject);
+begin
+  importaLiturgiaLlja;
+end;
+
+procedure TfmIndex.btExportaLiturgiaClick(Sender: TObject);
+begin
+  exportaLiturgiaLlja(diaLiturgiaAberto);
 end;
 
 procedure TfmIndex.importColetaneasPerso;
