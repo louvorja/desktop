@@ -18293,6 +18293,18 @@ begin
       Exit;
     end;
 
+    //Os ids do pacote ganham o sufixo _avulso. Sem isso o pacote leva os
+    //MESMOS ids que os itens têm aqui, e importar de volta faz a Avulsa
+    //citar as mesmas seções do dia de origem: as duas guias passam a
+    //editar o item idêntico, e o carregamento seguinte do pacote apaga
+    //aquelas seções (aplicaEm apaga as do dia que está substituindo),
+    //matando o dia de origem.
+    //
+    //Só aqui, nunca na sincronização da Avulsa: lá os ids do manifesto têm
+    //de continuar iguais aos das seções do dia 8, que é de onde a guia é
+    //reconstruída a cada execução.
+    lit.marcaIdentsComoAvulso;
+
     //Primeiro resolve os itens agendados: eles viram itens de arquivo e daí
     //entram no empacotamento abaixo como qualquer outro.
     for i := 0 to lit.itens.Count - 1 do

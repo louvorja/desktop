@@ -52,6 +52,18 @@ const
   //liturgia.json e seria perdida na primeira gravacao.
   VINCULO_AVULSA = 'avulsa';
 
+  //Sufixo que a EXPORTACAO poe no id de cada item do pacote. Nome de secao
+  //do INI e GLOBAL, nao por dia: aplicar uma liturgia num dia APAGA as
+  //secoes que aquele dia citava (ver aplicaEm), e se outro dia citar as
+  //mesmas, ele fica apontando para o vazio. Sem isto, exportar um dia e
+  //importar de volta fazia o dia de origem e a Avulsa citarem o MESMO
+  //item. Como o id e chave sintetica, renomear na saida resolve na origem.
+  //
+  //Vai no fim, no estilo do _d<dia>_i<indice> que a copia de itens entre
+  //dias ja usa, e diz para onde o pacote vai: a importacao cai sempre na
+  //guia Avulsa.
+  SUFIXO_IDENT_AVULSO = '_avulso';
+
   //Nomes dos dias no dominio do INI (1 = domingo), usados no "name" de cada
   //liturgia. Ficam aqui, na unit pura, para existirem num lugar so -- antes
   //viviam na implementation do fmCopiaLiturgiaDia e ninguem alcancava.
@@ -123,6 +135,13 @@ type
     //naquele dia. O dia e o do INI (1..7).
     procedure aplicaEm(doc: TCustomIniFile; dia: Integer);
 
+    //Poe o SUFIXO_IDENT_AVULSO no identificador de todos os itens, para o
+    //pacote nao levar os mesmos nomes de secao que os itens tem aqui. A
+    //referencia de um item ao seu bloco (blocoId) acompanha; a chave id= da
+    //secao NAO, porque ali ela e a categoria do item agendado e nao
+    //identificador de item.
+    procedure marcaIdentsComoAvulso;
+
     //Envelope simples: { schema, name, color, binding?, exportedAt, items }.
     function comoJson(comVinculo: Boolean = False): string;
 
@@ -172,6 +191,11 @@ function tipoDoJson(const tipoJson: string): string;
 //Dia da semana: 1..7 no INI, 0..6 no JSON.
 function diaParaJson(dia: Integer): Integer;
 function diaDoJson(dia: Integer): Integer;
+
+//O id com o SUFIXO_IDENT_AVULSO no fim. Nao empilha: id que ja termina nele
+//volta como esta, o que importa porque a propria Avulsa e exportavel e os
+//ids dela ja vem marcados de quem exportou antes.
+function comSufixoAvulso(const ident: string): string;
 
 //A liturgia INTEIRA do arquivo interno como colecao: uma entrada por dia
 //que tem itens, cada uma com o vinculo de dia da semana. E o formato do
@@ -343,6 +367,24 @@ begin
   end;
 
   Result := Trim(Result);
+end;
+
+function comSufixoAvulso(const ident: string): string;
+var
+  n: Integer;
+begin
+  //O id vem de nome de secao, que pode trazer qualquer coisa; o sufixo ja
+  //esta no formato aceito.
+  Result := identSeguro(ident);
+
+  n := Length(SUFIXO_IDENT_AVULSO);
+
+  //Copy com indice menor que 1 devolve do comeco, entao id mais curto que o
+  //sufixo cai no caso geral e recebe a marca.
+  if SameText(Copy(Result, Length(Result) - n + 1, n), SUFIXO_IDENT_AVULSO) then
+    Exit;
+
+  Result := Result + SUFIXO_IDENT_AVULSO;
 end;
 
 { ------------------------------------------------------------------- cores }
@@ -609,6 +651,50 @@ begin
 
   if (d >= 0) and (d <= 6) then
     Result := diaDoJson(d);
+end;
+
+procedure TLiturgiaTroca.marcaIdentsComoAvulso;
+var
+  i, k: Integer;
+  it: TItemTroca;
+  antigos, novos: TStringList;
+  bloco: string;
+begin
+  antigos := TStringList.Create;
+  novos := TStringList.Create;
+  try
+    //Os dois nomes de cada item ANTES de renomear qualquer coisa: a
+    //referencia ao bloco e resolvida pelo id antigo. As listas sao
+    //paralelas a FItens por construcao, entao o indice serve de mapa.
+    //TStringList.Values nao serviria: id vindo de secao editada a mao pode
+    //trazer sinal de igual, e ele quebraria o par nome=valor.
+    for i := 0 to FItens.Count - 1 do
+    begin
+      antigos.Add(item(i).ident);
+      novos.Add(comSufixoAvulso(item(i).ident));
+    end;
+
+    for i := 0 to FItens.Count - 1 do
+    begin
+      it := item(i);
+
+      bloco := it.valor('blocoId');
+
+      if (bloco <> '') then
+      begin
+        k := antigos.IndexOf(bloco);
+
+        if (k >= 0) then
+          it.poe('blocoId', novos[k]);
+      end;
+
+      it.ident := novos[i];
+      FItens.Strings[i] := novos[i];
+    end;
+  finally
+    novos.Free;
+    antigos.Free;
+  end;
 end;
 
 procedure TLiturgiaTroca.aplicaEm(doc: TCustomIniFile; dia: Integer);
