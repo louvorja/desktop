@@ -49,6 +49,11 @@ object fBuscaMusica: TfBuscaMusica
         Column = 1
         Control = bsSkinStdLabel5
         Row = 0
+      end
+      item
+        Column = 1
+        Control = ckLetra
+        Row = 2
       end>
     RowCollection = <
       item
@@ -120,6 +125,38 @@ object fBuscaMusica: TfBuscaMusica
       Layout = tlCenter
       ExplicitWidth = 80
       ExplicitHeight = 13
+    end
+    object ckLetra: TbsSkinCheckBox
+      Left = 30
+      Top = 38
+      Width = 641
+      Height = 19
+      HintImageIndex = 0
+      TabOrder = 1
+      SkinData = DM.bsSkinData1
+      SkinDataName = 'checkbox'
+      DefaultFont.Charset = DEFAULT_CHARSET
+      DefaultFont.Color = clWindowText
+      DefaultFont.Height = 13
+      DefaultFont.Name = 'Tahoma'
+      DefaultFont.Style = []
+      DefaultWidth = 0
+      DefaultHeight = 0
+      UseSkinFont = True
+      WordWrap = False
+      AllowGrayed = False
+      State = cbChecked
+      ImageIndex = 0
+      Flat = True
+      UseSkinFontColor = True
+      TabStop = True
+      CanFocused = True
+      Radio = False
+      Checked = True
+      GroupIndex = 0
+      Caption = 'Buscar na letra da m'#250'sica'
+      OnClick = ckLetraClick
+      Align = alClient
     end
   end
   object DBGrid1: TbsSkinDBGrid
@@ -432,12 +469,19 @@ object fBuscaMusica: TfBuscaMusica
       
         '    (CAST(:VALOR AS INTEGER) <= 0 AND NOME_SEMAC LIKE '#39'%'#39' || :VA' +
         'LOR || '#39'%'#39')'
+      '    OR'
+      '    (CAST(:VALOR AS INTEGER) <= 0 AND :OPC_LETRA = '#39'S'#39' AND LETRA_SEMAC LIKE '#39'%'#39' || :VALOR || '#39'%'#39')'
       '')
     Left = 354
     Top = 148
     ParamData = <
       item
         Name = 'VALOR'
+        ParamType = ptInput
+        Value = Null
+      end
+      item
+        Name = 'OPC_LETRA'
         ParamType = ptInput
         Value = Null
       end>
