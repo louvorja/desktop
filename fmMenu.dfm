@@ -13027,6 +13027,103 @@ object fmIndex: TfmIndex
           end
         end
       end
+      object grpLitArquivo: TbsRibbonGroup
+        Left = 684
+        Top = 0
+        Width = 204
+        Height = 86
+        HintImageIndex = 0
+        TabOrder = 3
+        SkinData = DM.bsSkinData1
+        SkinDataName = 'officegroup'
+        DefaultFont.Charset = DEFAULT_CHARSET
+        DefaultFont.Color = clWindowText
+        DefaultFont.Height = 13
+        DefaultFont.Name = 'Tahoma'
+        DefaultFont.Style = []
+        DefaultWidth = 0
+        DefaultHeight = 0
+        UseSkinFont = True
+        Align = alLeft
+        Caption = 'Liturgia em Arquivo'
+        ShowDialogButton = False
+        object btImportaLiturgia: TbsSkinSpeedButton
+          Left = 2
+          Top = 2
+          Width = 102
+          Height = 65
+          HintImageIndex = 0
+          SkinData = DM.bsSkinData1
+          SkinDataName = 'resizetoolbutton'
+          DefaultFont.Charset = DEFAULT_CHARSET
+          DefaultFont.Color = clWindowText
+          DefaultFont.Height = 13
+          DefaultFont.Name = 'Tahoma'
+          DefaultFont.Style = []
+          DefaultWidth = 0
+          DefaultHeight = 0
+          UseSkinFont = True
+          CheckedMode = False
+          ImageList = DM.ico_40x40
+          UseSkinSize = True
+          UseSkinFontColor = True
+          WidthWithCaption = 0
+          WidthWithoutCaption = 0
+          ImageIndex = 26
+          RepeatMode = False
+          RepeatInterval = 100
+          Transparent = True
+          Flat = True
+          AllowAllUp = False
+          Down = False
+          GroupIndex = 0
+          Caption = 'Importar Avulsa'
+          ShowCaption = True
+          NumGlyphs = 1
+          Align = alLeft
+          Spacing = 1
+          Layout = blGlyphTop
+          OnClick = btImportaLiturgiaClick
+        end
+        object btExportaLiturgia: TbsSkinSpeedButton
+          Left = 104
+          Top = 2
+          Width = 100
+          Height = 65
+          HintImageIndex = 0
+          SkinData = DM.bsSkinData1
+          SkinDataName = 'resizetoolbutton'
+          DefaultFont.Charset = DEFAULT_CHARSET
+          DefaultFont.Color = clWindowText
+          DefaultFont.Height = 13
+          DefaultFont.Name = 'Tahoma'
+          DefaultFont.Style = []
+          DefaultWidth = 0
+          DefaultHeight = 0
+          UseSkinFont = True
+          CheckedMode = False
+          ImageList = DM.ico_40x40
+          UseSkinSize = True
+          UseSkinFontColor = True
+          WidthWithCaption = 0
+          WidthWithoutCaption = 0
+          ImageIndex = 32
+          RepeatMode = False
+          RepeatInterval = 100
+          Transparent = True
+          Flat = True
+          AllowAllUp = False
+          Down = False
+          GroupIndex = 0
+          Caption = 'Exportar Dia'
+          ShowCaption = True
+          NumGlyphs = 1
+          Align = alClient
+          Spacing = 1
+          Layout = blGlyphTop
+          OnClick = btExportaLiturgiaClick
+        end
+      end
     end
   end
   object PageControl1: TbsSkinPageControl
@@ -49883,49 +49980,56 @@ object fmIndex: TfmIndex
             Value = 30.000000000000000000
           end
           item
-            Value = 14.289997774361850000
+            Value = 12.500000000000000000
           end
           item
             SizeStyle = ssAbsolute
             Value = 10.000000000000000000
           end
           item
-            Value = 14.288507365765440000
+            Value = 12.500000000000000000
           end
           item
             SizeStyle = ssAbsolute
             Value = 10.000000000000000000
           end
           item
-            Value = 14.287111146819400000
+            Value = 12.500000000000000000
           end
           item
             SizeStyle = ssAbsolute
             Value = 10.000000000000000000
           end
           item
-            Value = 14.285729021393030000
+            Value = 12.500000000000000000
           end
           item
             SizeStyle = ssAbsolute
             Value = 10.000000000000000000
           end
           item
-            Value = 14.284323294123630000
+            Value = 12.500000000000000000
           end
           item
             SizeStyle = ssAbsolute
             Value = 10.000000000000000000
           end
           item
-            Value = 14.282889350554470000
+            Value = 12.500000000000000000
           end
           item
             SizeStyle = ssAbsolute
             Value = 10.000000000000000000
           end
           item
-            Value = 14.281442046982170000
+            Value = 12.500000000000000000
+          end
+          item
+            SizeStyle = ssAbsolute
+            Value = 10.000000000000000000
+          end
+          item
+            Value = 12.500000000000000000
           end
           item
             SizeStyle = ssAbsolute
@@ -50002,6 +50106,17 @@ object fmIndex: TfmIndex
             Control = bsRibbonDivider21
             Row = 0
             RowSpan = 3
+          end
+          item
+            Column = 14
+            Control = divLitAvulsa
+            Row = 0
+            RowSpan = 3
+          end
+          item
+            Column = 15
+            Control = lcal_8
+            Row = 1
           end>
         RowCollection = <
           item
@@ -50306,6 +50421,55 @@ object fmIndex: TfmIndex
           ExplicitTop = 14
           ExplicitWidth = 91
           ExplicitHeight = 61
+        end
+        object divLitAvulsa: TbsRibbonDivider
+          Left = 1148
+          Top = 0
+          Width = 10
+          Height = 49
+          HintImageIndex = 0
+          SkinData = DM.bsSkinData1
+          SkinDataName = 'officegroupdivider'
+          DividerType = bsdtVerticalLine
+          Align = alClient
+        end
+        object lcal_8: TbsSkinSpeedButton
+          Tag = 8
+          Left = 1158
+          Top = 10
+          Width = 178
+          Height = 29
+          HintImageIndex = 0
+          SkinData = DM.bsSkinData1
+          SkinDataName = 'toolbutton'
+          DefaultFont.Charset = DEFAULT_CHARSET
+          DefaultFont.Color = clWindowText
+          DefaultFont.Height = 13
+          DefaultFont.Name = 'Tahoma'
+          DefaultFont.Style = []
+          DefaultWidth = 0
+          DefaultHeight = 0
+          UseSkinFont = True
+          CheckedMode = True
+          ImageList = DM.ico_24x24
+          UseSkinSize = False
+          UseSkinFontColor = True
+          WidthWithCaption = 0
+          WidthWithoutCaption = 0
+          ImageIndex = 39
+          RepeatMode = False
+          RepeatInterval = 100
+          Transparent = False
+          Flat = False
+          AllowAllUp = False
+          Down = False
+          GroupIndex = -1
+          Caption = 'Avulsa'
+          ShowCaption = True
+          NumGlyphs = 1
+          Align = alClient
+          Spacing = 1
+          OnClick = LiturgiaCalendarClick
         end
         object bsRibbonDivider9: TbsRibbonDivider
           Left = 208

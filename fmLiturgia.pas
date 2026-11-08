@@ -79,6 +79,7 @@ type
     procedure bsSkinSpeedButton3Click(Sender: TObject);
   private
     { Private declarations }
+    procedure ajustaOpcoesArquivo;
   public
     { Public declarations }
     id: string;
@@ -93,6 +94,12 @@ implementation
 {$R *.dfm}
 
 uses fmMenu, fmBuscaMusica, dmComponentes, fmIniciando;
+
+const
+  AVISO_SEM_PASTA =
+    'Na guia Avulsa só é possível usar arquivos, não pastas.'#13#10#13#10 +
+    'A liturgia avulsa é guardada dentro do pacote .llja, e uma pasta não '
+    + 'pode viajar dentro dele.';
 
 procedure TfLiturgia.edtDiretorioEnter(Sender: TObject);
 begin
@@ -120,10 +127,37 @@ begin
   fmIndex.abrirArquivo(urlSite.Text);
 end;
 
+//Na guia Avulsa só arquivo: a liturgia mora dentro do .llja, e a
+//sincronização copia para dentro do pacote o arquivo que o item aponta --
+//o que não existe para diretório. Um item de pasta ficaria preso a esta
+//máquina e daria "não encontrado" na outra, que é por isso que a exportação
+//de um dia normal já converte pasta em anotação. Aqui a opção nem aparece.
+procedure TfLiturgia.ajustaOpcoesArquivo;
+var
+  avulsa: Boolean;
+begin
+  avulsa := fmIndex.liturgiaAvulsaAberta;
+
+  bsSkinSpeedButton3.Visible := not avulsa;
+
+  if avulsa
+    then bsSkinStdLabel3.Caption := 'Arquivo:'
+    else bsSkinStdLabel3.Caption := 'Arquivo/Diretório:';
+end;
+
 procedure TfLiturgia.bsSkinSpeedButton3Click(Sender: TObject);
 var
   dir: string;
 begin
+  //O botão fica oculto na Avulsa; a guarda é barata e cobre o clique que
+  //venha de outro caminho.
+  if fmIndex.liturgiaAvulsaAberta then
+  begin
+    Application.MessageBox(AVISO_SEM_PASTA, fmIndex.titulo,
+                           mb_ok + MB_ICONEXCLAMATION);
+    Exit;
+  end;
+
   dir := fmIndex.openDialog('pasta', '', 'Liturgia',false,edtDiretorio.Text);
   if dir <> '' then edtDiretorio.Text := dir;
   edtDiretorioExit(Sender);
@@ -131,9 +165,15 @@ end;
 
 procedure TfLiturgia.bsSkinSpeedButton4Click(Sender: TObject);
 var
-  arq: string;
+  arq, inicial: string;
 begin
-  arq := fmIndex.openDialog('arquivo', '', 'Liturgia',false,ExtractFilePath(edtDiretorio.Text));
+  inicial := ExtractFilePath(edtDiretorio.Text);
+
+  //Sem caminho digitado, a guia Avulsa abre o seletor nos arquivos do .llja.
+  if (Trim(inicial) = '') then
+    inicial := fmIndex.pastaInicialSeletorLiturgia;
+
+  arq := fmIndex.openDialog('arquivo', '', 'Liturgia', False, inicial);
   if arq <> '' then edtDiretorio.Text := arq;
   edtDiretorioExit(Sender);
 end;
@@ -225,6 +265,18 @@ begin
     if (edtDiretorioInfo.Text = 'I')
       then param := ExtractFilePath(Application.ExeName)+edtDiretorio.Text
       else param := edtDiretorio.Text;
+
+    //O botão de diretório não aparece na Avulsa, mas o caminho pode ter
+    //sido digitado ou vir de um arrastar-e-soltar. Ver ajustaOpcoesArquivo.
+    if fmIndex.liturgiaAvulsaAberta and
+       ((Copy(param, Length(param), 1) = PathDelim) or
+        DirectoryExists(param)) then
+    begin
+      Application.MessageBox(AVISO_SEM_PASTA, fmIndex.titulo,
+                             mb_ok + MB_ICONEXCLAMATION);
+      if edtDiretorio.CanFocus then edtDiretorio.SetFocus;
+      Exit;
+    end;
 
     if (Copy(param,Length(param),1) = '\') then
     begin
@@ -329,6 +381,8 @@ begin
 
   lblItem.Visible := not pnlItensAgendados.Visible;
   txtItem.Visible := not pnlItensAgendados.Visible;
+
+  ajustaOpcoesArquivo;
 
   if idx < 0 then Exit;
   executaOpcoes;

@@ -20,11 +20,10 @@ type
 
 implementation
 
-const
-  NOMES_DIAS: array[1..7] of string = (
-    'Domingo', 'Segunda-feira', 'Ter'#231'a-feira',
-    'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'S'#225'bado'
-  );
+uses
+  //NOMES_DIAS vem de la: a liturgia exportada usa os mesmos nomes de dia,
+  //entao eles moram na unit pura do formato.
+  uLiturgiaTroca;
 
 constructor TfCopiaLiturgiaDia.CreateDialog(AOwner: TComponent; ADiaOrigem: Integer);
 var

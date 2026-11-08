@@ -252,6 +252,9 @@
         <DCCReference Include="fmQRCode.pas"/>
         <DCCReference Include="uInstanciaUnica.pas"/>
         <DCCReference Include="uArquivosWeb.pas"/>
+        <DCCReference Include="uLiturgia.pas"/>
+        <DCCReference Include="uLiturgiaTroca.pas"/>
+        <DCCReference Include="uLiturgiaLlja.pas"/>
         <BuildConfiguration Include="Release">
             <Key>Cfg_2</Key>
             <CfgParent>Base</CfgParent>
