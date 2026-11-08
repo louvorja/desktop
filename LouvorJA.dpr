@@ -43,10 +43,7 @@ uses
   DelphiZXingQRCode in 'components\DelphiZXingQRCode\DelphiZXingQRCode.pas',
   fmQRCode in 'fmQRCode.pas',
   uInstanciaUnica in 'uInstanciaUnica.pas',
-  uArquivosWeb in 'uArquivosWeb.pas',
-  uLiturgia in 'uLiturgia.pas',
-  uLiturgiaTroca in 'uLiturgiaTroca.pas',
-  uLiturgiaLlja in 'uLiturgiaLlja.pas';
+  uArquivosWeb in 'uArquivosWeb.pas';
 
 {$R *.res}
 
