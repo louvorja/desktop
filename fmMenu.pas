@@ -1679,6 +1679,8 @@ type
     procedure buscaMusicas();
     procedure DBGrid2DblClick(Sender: TObject);
     procedure txtBuscaKeyPress(Sender: TObject; var Key: Char);
+    procedure txtBuscaKeyDown(Sender: TObject; var Key: Word;
+      Shift: TShiftState);
     procedure SorteioContador();
     function isFolderEmpty(szPath: string): Boolean;
     function IsNumeric(S: string): boolean;
@@ -2428,6 +2430,10 @@ procedure TfmIndex.FormKeyUp(Sender: TObject; var Key: Word; Shift: TShiftState)
 var
   t: integer;
 begin
+  if ((Key = VK_UP) or (Key = VK_DOWN)) and (Shift = []) and
+     (Screen.ActiveControl = txtBusca) then
+    Exit;
+
   if (Key = VK_ESCAPE) then
   begin
     if bsRibbon1.AppMenu.Visible then
@@ -4743,6 +4749,21 @@ begin
     Key := #0;
     DBGrid2DblClick(Sender);
   end;
+end;
+
+procedure TfmIndex.txtBuscaKeyDown(Sender: TObject; var Key: Word;
+  Shift: TShiftState);
+begin
+  if (Shift <> []) then Exit;
+  if (Key <> VK_UP) and (Key <> VK_DOWN) then Exit;
+  if (DM.qrBUSCA.Active = False) or (DM.qrBUSCA.RecordCount <= 0) then Exit;
+
+  if (Key = VK_DOWN)
+    then DM.qrBUSCA.Next
+    else DM.qrBUSCA.Prior;
+
+  Key := 0;
+  DBGrid2CellClick(nil);
 end;
 
 function TfmIndex.RemoveAcento(Str: string): string;

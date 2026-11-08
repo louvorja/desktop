@@ -31,6 +31,8 @@ type
     procedure txtBuscaKeyUp(Sender: TObject; var Key: Word; Shift: TShiftState);
     procedure DBGrid1DblClick(Sender: TObject);
     procedure txtBuscaKeyPress(Sender: TObject; var Key: Char);
+    procedure txtBuscaKeyDown(Sender: TObject; var Key: Word;
+      Shift: TShiftState);
     procedure FormResize(Sender: TObject);
     procedure ckLetraClick(Sender: TObject);
     procedure DBGrid1DrawColumnCell(Sender: TObject; const Rect: TRect;
@@ -141,6 +143,10 @@ end;
 procedure TfBuscaMusica.FormKeyUp(Sender: TObject; var Key: Word;
   Shift: TShiftState);
 begin
+  if ((Key = VK_UP) or (Key = VK_DOWN)) and (Shift = []) and
+     (Screen.ActiveControl = txtBusca) then
+    Exit;
+
   fmIndex.FormKeyUp(Sender, Key, Shift);
 end;
 
@@ -190,6 +196,20 @@ begin
     Key := #0;
     DBGrid1DblClick(Sender);
   end;
+end;
+
+procedure TfBuscaMusica.txtBuscaKeyDown(Sender: TObject; var Key: Word;
+  Shift: TShiftState);
+begin
+  if (Shift <> []) then Exit;
+  if (Key <> VK_UP) and (Key <> VK_DOWN) then Exit;
+  if (qrBUSCA.Active = False) or (qrBUSCA.RecordCount <= 0) then Exit;
+
+  if (Key = VK_DOWN)
+    then qrBUSCA.Next
+    else qrBUSCA.Prior;
+
+  Key := 0;
 end;
 
 procedure TfBuscaMusica.txtBuscaKeyUp(Sender: TObject; var Key: Word;
