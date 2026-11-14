@@ -214,7 +214,7 @@ implementation
 uses
   fmMusica, fmMenu, fmQRCode, dmComponentes, fmMonitorSorteio, fmVideoOn, Vcl.MPlayer,
   System.SyncObjs, System.StrUtils, System.IOUtils, System.Hash, IdURI, IdGlobal,
-  IdStack, Winapi.WinInet;
+  IdStack, Winapi.WinInet, uLiturgiaTroca;
 
 // ── Enumeração de interfaces de rede (iphlpapi) ─────────────────────────────
 
@@ -1040,6 +1040,25 @@ begin
       Exit;
     end;
 
+    // API: Control Drawing name - rota removida
+    //
+    // Os sorteios de nome e de número foram unificados: há uma lista só, e a
+    // /api/drawing-number opera sobre ela. A rota antiga deixou de existir
+    // junto com os controles que ela acessava.
+    //
+    // Responder aqui é o que torna a remoção visível: rota desconhecida na v1
+    // escapa para o servidor de arquivos e devolve o 404.html com status 200,
+    // então um cliente antigo aceitaria a resposta e não veria erro nenhum.
+    if arq = '/api/drawing-name' then
+    begin
+      AResponseInfo.ResponseNo := 410;
+      AResponseInfo.ContentText :=
+        '{"status":"error","message":"Rota removida: os sorteios de nome e de ' +
+        'número foram unificados. Use /api/drawing-number, que sorteia nomes e ' +
+        'números da mesma lista.","code":"ROUTE_REMOVED"}';
+      Exit;
+    end;
+
     // API: Control Drawing number
     if arq = '/api/drawing-number' then
     begin
@@ -1074,11 +1093,21 @@ begin
       else if (ARequestInfo.Params.Values['action'] = 'draw') then
       begin
 
-        if fmIndex.lbSorteio.Items.Count = 0 then
+        // O critério é o bolo disponível (vlSorteio), igual ao do programa, e
+        // não a lbSorteio, que mantém o item sorteado apenas marcado. Pela
+        // lista, com tudo já sorteado a guarda passava e o btSortearClick
+        // abria uma caixa modal, travando a interface.
+        if (fmIndex.vlSorteio.Strings.Count = 0) and
+           (Trim(fmIndex.opSort_Ini.Text) = '') and
+           (Trim(fmIndex.opSort_Fin.Text) = '') then
         begin
           AResponseInfo.ResponseNo := 400;
-          AResponseInfo.ContentText :=
-            '{"status":"error","message":"Nenhum participante adicionado ao sorteio","code":"EMPTY_PARTICIPANTS"}';
+          if fmIndex.lbSorteio.Items.Count = 0 then
+            AResponseInfo.ContentText :=
+              '{"status":"error","message":"Nenhum participante adicionado ao sorteio","code":"EMPTY_PARTICIPANTS"}'
+          else
+            AResponseInfo.ContentText :=
+              '{"status":"error","message":"Todos os itens já foram sorteados","code":"ALL_DRAWN"}';
           Exit;
         end;
 
@@ -3094,17 +3123,22 @@ begin
   if not v2ExigeMetodo(ARequestInfo, AResponseInfo, acao, 'GET') then
     Exit;
 
-  //Dia da semana no formato do programa: 1 = domingo ... 7 = sábado
+  //Dia no formato do programa: 1 = domingo ... 7 = sábado, 8 = Avulsa.
+  //
+  //A Avulsa é a guia que recebe uma liturgia vinda de fora (um .llja) e não
+  //pertence à semana. Os limites vêm do uLiturgiaTroca para não ficarem
+  //escritos aqui: um nono dia, se existir um dia, entra sozinho.
   semanaTxt := Trim(v2Param(ARequestInfo, 'week'));
   if (semanaTxt = '') then
     semana := 0
   else
   begin
     semana := StrToIntDef(semanaTxt, -1);
-    if (semana < 1) or (semana > 7) then
+    if (semana < PRIMEIRO_DIA) or (semana > ULTIMO_DIA) then
     begin
       respondeV2Erro(AResponseInfo, 400, acao, 'INVALID_WEEK',
-        'Parâmetro week deve ser de 1 (domingo) a 7 (sábado)');
+        'Parâmetro week deve ser de ' + IntToStr(PRIMEIRO_DIA) +
+        ' (domingo) a 7 (sábado), ou ' + IntToStr(DIA_AVULSA) + ' (avulsa)');
       Exit;
     end;
   end;
@@ -3121,12 +3155,14 @@ begin
       chave, tipo, marcado, extra: string;
       temPlayback, escolhe: Boolean;
     begin
-      //Sem week explícito usa o dia que a tela está mostrando, ou hoje
+      //Sem week explícito usa o dia que a tela está mostrando, ou hoje.
+      //A Avulsa conta como dia mostrado: descartá-la faria a API responder
+      //por outro dia, calada, enquanto o operador olha para ela.
       if (semana = 0) then
       begin
         semana := StrToIntDef(
           fmIndex.loadCol.Strings.Values['LITURGIA:SEMANA'], 0);
-        if (semana < 1) or (semana > 7) then
+        if (semana < PRIMEIRO_DIA) or (semana > ULTIMO_DIA) then
           semana := DayOfWeek(Now);
       end;
 
@@ -3218,7 +3254,11 @@ begin
     ',"items":[' + itens + ']');
 end;
 
-//Em que dia da semana o item está. Zero quando não aparece em nenhum.
+//Em que dia o item está. Zero quando não aparece em nenhum.
+//
+//A varredura inclui a Avulsa (ULTIMO_DIA): sem ela, abrir um item que só
+//existe lá falharia com ITEM_NOT_LOADED sempre que a guia não estivesse
+//aberta - e funcionaria quando estivesse, que é o pior jeito de falhar.
 function TfTransmitir.v2LiturgyDiaDoItem(const chave: string): Integer;
 var
   lista: TStringList;
@@ -3228,7 +3268,8 @@ begin
   lista := TStringList.Create;
   try
     lista.Delimiter := ';';
-    for dia := 1 to 7 do
+    lista.StrictDelimiter := True;
+    for dia := PRIMEIRO_DIA to ULTIMO_DIA do
     begin
       lista.DelimitedText :=
         fmIndex.lerParam('Geral', IntToStr(dia), '', fmIndex.arq_liturgia);
@@ -3404,6 +3445,57 @@ begin
   end;
 end;
 
+//Diz se o texto serve como item do sorteio.
+//
+//Função pura, sem VCL: porta para o Lazarus sem alteração.
+//
+//A regra existe por causa de como o bolo é guardado. vlSorteio e vlSorteados
+//são TValueListEditor, ou seja uma linha "nome=valor" por item, e o nome é o
+//próprio texto. Então:
+//
+//  - '=' quebra a chave. Gravar 'a=b' produz a linha 'a=b=3', que volta como
+//    nome 'a' e valor 'b=3'. A busca por 'a=b' não casa mais, o item entra
+//    duplicado, e no sorteio o StrToInt('b=3') levanta EConvertError dentro
+//    do tmrSortear - fora de qualquer tratamento, com a animação no ar;
+//  - CR/LF quebra a linha, com o mesmo efeito.
+//
+//Em vez de recusar só esses dois, a regra é lista branca: número, letra e
+//espaço. Letra inclui as acentuadas de propósito - sem elas "Maria José"
+//seria recusada, e o sorteio de nomes é justamente o que a unificação trouxe.
+function itemSorteioValido(const item: string): Boolean;
+var
+  i: Integer;
+  c: Char;
+begin
+  Result := False;
+  if (item = '') then
+    Exit;
+
+  for i := 1 to Length(item) do
+  begin
+    c := item[i];
+
+    if ((c >= '0') and (c <= '9')) or
+       ((c >= 'A') and (c <= 'Z')) or
+       ((c >= 'a') and (c <= 'z')) or
+       (c = ' ') then
+      Continue;
+
+    //Latin-1 acentuado, menos os dois sinais matemáticos que moram na faixa
+    //(× em $00D7 e ÷ em $00F7)
+    if (c >= #$00C0) and (c <= #$00FF) and (c <> #$00D7) and (c <> #$00F7) then
+      Continue;
+
+    //Latin Extended-A: resto dos alfabetos latinos acentuados
+    if (c >= #$0100) and (c <= #$017F) then
+      Continue;
+
+    Exit;
+  end;
+
+  Result := True;
+end;
+
 {
   Acrescenta itens ao sorteio.
 
@@ -3413,12 +3505,21 @@ end;
   Reaproveita os handlers do programa em vez de repetir a regra: eles já
   tratam item repetido, item que já foi sorteado voltando para o bolo, e a
   formatação do número em quatro dígitos.
+
+  Mas duas coisas o handler NÃO trata, e por isso são conferidas aqui:
+
+  - caractere que corrompe o mapa do bolo (ver itemSorteioValido);
+  - comprimento. O btAddSorteioNMClick faz Copy(texto, 0, MaxLength) e grava o
+    pedaço, calado. Pela API isso é pior que pela tela: a resposta diria
+    "added":1, o participants mostraria a forma cortada, e um remove com o
+    texto original devolveria 404. O limite é lido do próprio controle, para
+    não divergir do .dfm.
 }
 procedure TfTransmitir.v2DrawAdd(ARequestInfo: TIdHTTPRequestInfo;
   AResponseInfo: TIdHTTPResponseInfo; const acao: string);
 var
   txtDe, txtAte, item: string;
-  de, ate, antes, depois: Integer;
+  de, ate, antes, depois, limite: Integer;
 begin
   item := Trim(v2Param(ARequestInfo, 'item'));
   txtDe := Trim(v2Param(ARequestInfo, 'from'));
@@ -3428,6 +3529,13 @@ begin
   begin
     respondeV2Erro(AResponseInfo, 400, acao, 'MISSING_ITEM',
       'Informe item, ou uma faixa em from e to');
+    Exit;
+  end;
+
+  if (item <> '') and not itemSorteioValido(item) then
+  begin
+    respondeV2Erro(AResponseInfo, 400, acao, 'INVALID_ITEM',
+      'item aceita apenas letras, números e espaço');
     Exit;
   end;
 
@@ -3472,10 +3580,16 @@ begin
 
   antes := 0;
   depois := 0;
+  limite := 0;
 
   if not executaNaInterface(
     procedure
     begin
+      //O limite vem do próprio controle, para não divergir do .dfm
+      limite := fmIndex.opSort_Nm.MaxLength;
+      if (item <> '') and (limite > 0) and (Length(item) > limite) then
+        Exit;
+
       antes := fmIndex.lbSorteio.Items.Count;
 
       if (item <> '') then
@@ -3494,6 +3608,13 @@ begin
     end, TIMEOUT_COMANDO) then
   begin
     respondeV2Ocupado(AResponseInfo, acao);
+    Exit;
+  end;
+
+  if (item <> '') and (limite > 0) and (Length(item) > limite) then
+  begin
+    respondeV2Erro(AResponseInfo, 400, acao, 'ITEM_TOO_LONG',
+      'item passa do limite de ' + IntToStr(limite) + ' caracteres');
     Exit;
   end;
 
@@ -3613,35 +3734,54 @@ end;
 {
   Dispara um sorteio.
 
-  Os dois impedimentos são checados antes de clicar no botão porque o
+  Os impedimentos são checados antes de clicar no botão porque o
   btSortearClick, sem itens para sortear, abre uma caixa de mensagem modal.
   Ela travaria a interface esperando o operador, e a requisição só sairia
   daqui por prazo esgotado.
+
+  O critério tem de ser o MESMO do programa, e ele olha vlSorteio - o mapa do
+  que ainda está disponível -, não a lbSorteio, que guarda todos os itens com
+  o sorteado apenas marcado. Com o bolo esgotado as duas respondem coisas
+  diferentes: a lista continua cheia e o bolo está vazio, e era por aí que a
+  caixa modal escapava.
+
+  A faixa inicial/final entra na conta porque o btSortearClick chama o
+  btAddSorteioClick antes de olhar o bolo, e isso devolve a faixa inteira para
+  ele - então faixa preenchida significa que haverá o que sortear.
 }
 procedure TfTransmitir.v2Draw(AResponseInfo: TIdHTTPResponseInfo;
   const acao: string);
 var
-  jaSorteando, semParticipantes, habilitado: Boolean;
+  jaSorteando, semParticipantes, todosSorteados, habilitado: Boolean;
 begin
   jaSorteando := False;
   semParticipantes := False;
+  todosSorteados := False;
   habilitado := True;
 
   if not executaNaInterface(
     procedure
+    var
+      boloVazio: Boolean;
     begin
       //tmrSortear liga durante a animação e se desliga ao final
       jaSorteando := DM.tmrSortear.Enabled;
       if jaSorteando then
         Exit;
 
-      //A faixa inicial/final também alimenta a lista, então lista vazia só
-      //impede de fato quando os dois campos de faixa estão vazios
-      semParticipantes := (fmIndex.lbSorteio.Items.Count = 0) and
-                          (Trim(fmIndex.opSort_Ini.Text) = '') and
-                          (Trim(fmIndex.opSort_Fin.Text) = '');
-      if semParticipantes then
+      boloVazio := (fmIndex.vlSorteio.Strings.Count = 0) and
+                   (Trim(fmIndex.opSort_Ini.Text) = '') and
+                   (Trim(fmIndex.opSort_Fin.Text) = '');
+
+      //Bolo vazio com a lista cheia quer dizer que tudo já saiu. São dois
+      //estados diferentes para quem chama: um pede itens, o outro pede
+      //restart.
+      if boloVazio then
+      begin
+        semParticipantes := (fmIndex.lbSorteio.Items.Count = 0);
+        todosSorteados := not semParticipantes;
         Exit;
+      end;
 
       habilitado := fmIndex.btSortear.Enabled;
       if not habilitado then
@@ -3664,7 +3804,15 @@ begin
   if semParticipantes then
   begin
     respondeV2Erro(AResponseInfo, 409, acao, 'EMPTY_PARTICIPANTS',
-      'Nenhum participante adicionado ao sorteio');
+      'Nenhum participante adicionado ao sorteio. Use action=add');
+    Exit;
+  end;
+
+  if todosSorteados then
+  begin
+    respondeV2Erro(AResponseInfo, 409, acao, 'ALL_DRAWN',
+      'Todos os itens já foram sorteados. Use action=restart para devolvê-los ' +
+      'ao bolo, ou action=add para acrescentar outros');
     Exit;
   end;
 
@@ -3730,8 +3878,15 @@ end;
 {
   Abre uma música pelo ID.
 
-  O parâmetro "modo" substitui o "tag" numérico da v1, que era 1, 2 ou 3 sem
+  O parâmetro de modo substitui o "tag" numérico da v1, que era 1, 2 ou 3 sem
   nada no código nem na resposta explicando o que cada número fazia.
+
+  O nome canônico é "mode", com valor "no-audio", igual ao que a /liturgy já
+  usa. O "modo" com "sem-audio" veio antes, em português, e continua aceito
+  sem prazo para sair - há clientes usando. Mandando os dois, vale o "mode".
+
+  A resposta leva os DOIS campos pelo mesmo motivo: um cliente antigo lê
+  "modo" e um novo lê "mode", e nenhum dos dois quebra.
 }
 procedure TfTransmitir.v2OpenSong(ARequestInfo: TIdHTTPRequestInfo;
   AResponseInfo: TIdHTTPResponseInfo; const acao: string);
@@ -3751,7 +3906,9 @@ begin
     Exit;
   end;
 
-  modo := LowerCase(Trim(v2Param(ARequestInfo, 'modo')));
+  modo := LowerCase(Trim(v2Param(ARequestInfo, 'mode')));
+  if (modo = '') then
+    modo := LowerCase(Trim(v2Param(ARequestInfo, 'modo')));
   if (modo = '') then
     modo := 'normal';
 
@@ -3760,12 +3917,12 @@ begin
 
   if (modo = 'pb') then
     txtModo := 'PB'
-  else if (modo = 'sem-audio') then
+  else if (modo = 'no-audio') or (modo = 'sem-audio') then
     tocarAudio := False
   else if (modo <> 'normal') then
   begin
     respondeV2Erro(AResponseInfo, 400, acao, 'INVALID_MODE',
-      'Parâmetro modo deve ser normal, pb ou sem-audio');
+      'Parâmetro mode deve ser normal, pb ou no-audio');
     Exit;
   end;
 
@@ -3781,7 +3938,9 @@ begin
   end;
 
   respondeV2Ok(AResponseInfo, acao, 'SONG_OPENED', '',
-    '"id":' + IntToStr(idMusica) + ',"modo":"' + modo + '"');
+    '"id":' + IntToStr(idMusica) +
+    ',"mode":"' + modo + '"' +
+    ',"modo":"' + modo + '"');
 end;
 
 {
@@ -3994,7 +4153,12 @@ begin
     Exit;
   end;
 
-  if SameText(rota, ROTA_V2 + '/drawing-number') then
+  //O sorteio é um só desde a unificação de nomes e números, então o nome da
+  //rota é /drawing. A /drawing-number continua atendendo, sem prazo para
+  //sair: há gente usando. O campo "action" da resposta devolve a rota que o
+  //cliente chamou, não a canônica.
+  if SameText(rota, ROTA_V2 + '/drawing') or
+     SameText(rota, ROTA_V2 + '/drawing-number') then
   begin
     v2DrawingNumber(ARequestInfo, AResponseInfo, acao);
     Exit;

@@ -1822,7 +1822,6 @@ type
     procedure opSort_NmKeyUp(Sender: TObject; var Key: Word; Shift: TShiftState);
     procedure btAddSorteioNMClick(Sender: TObject);
     procedure btImpSorteioNMClick(Sender: TObject);
-    procedure btSortearNMClick(Sender: TObject);
     procedure btLimpaSorteioLimpaNMClick(Sender: TObject);
     procedure btLimpaSorteioReiniciaNMClick(Sender: TObject);
     procedure btLimpaSorteioNMClick(Sender: TObject);
@@ -12033,13 +12032,6 @@ begin
       end;
     end;
   end;
-end;
-
-procedure TfmIndex.btSortearNMClick(Sender: TObject);
-begin
-  if (Trim(opSort_NM.Text) <> '') then
-    btAddSorteioNMClick(nil);
-  btSortearClick(nil);
 end;
 
 procedure TfmIndex.btFormatClick(Sender: TObject);
