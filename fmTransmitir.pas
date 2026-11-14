@@ -1040,6 +1040,25 @@ begin
       Exit;
     end;
 
+    // API: Control Drawing name - rota removida
+    //
+    // Os sorteios de nome e de número foram unificados: há uma lista só, e a
+    // /api/drawing-number opera sobre ela. A rota antiga deixou de existir
+    // junto com os controles que ela acessava.
+    //
+    // Responder aqui é o que torna a remoção visível: rota desconhecida na v1
+    // escapa para o servidor de arquivos e devolve o 404.html com status 200,
+    // então um cliente antigo aceitaria a resposta e não veria erro nenhum.
+    if arq = '/api/drawing-name' then
+    begin
+      AResponseInfo.ResponseNo := 410;
+      AResponseInfo.ContentText :=
+        '{"status":"error","message":"Rota removida: os sorteios de nome e de ' +
+        'número foram unificados. Use /api/drawing-number, que sorteia nomes e ' +
+        'números da mesma lista.","code":"ROUTE_REMOVED"}';
+      Exit;
+    end;
+
     // API: Control Drawing number
     if arq = '/api/drawing-number' then
     begin
