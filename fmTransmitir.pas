@@ -1093,11 +1093,21 @@ begin
       else if (ARequestInfo.Params.Values['action'] = 'draw') then
       begin
 
-        if fmIndex.lbSorteio.Items.Count = 0 then
+        // O critério é o bolo disponível (vlSorteio), igual ao do programa, e
+        // não a lbSorteio, que mantém o item sorteado apenas marcado. Pela
+        // lista, com tudo já sorteado a guarda passava e o btSortearClick
+        // abria uma caixa modal, travando a interface.
+        if (fmIndex.vlSorteio.Strings.Count = 0) and
+           (Trim(fmIndex.opSort_Ini.Text) = '') and
+           (Trim(fmIndex.opSort_Fin.Text) = '') then
         begin
           AResponseInfo.ResponseNo := 400;
-          AResponseInfo.ContentText :=
-            '{"status":"error","message":"Nenhum participante adicionado ao sorteio","code":"EMPTY_PARTICIPANTS"}';
+          if fmIndex.lbSorteio.Items.Count = 0 then
+            AResponseInfo.ContentText :=
+              '{"status":"error","message":"Nenhum participante adicionado ao sorteio","code":"EMPTY_PARTICIPANTS"}'
+          else
+            AResponseInfo.ContentText :=
+              '{"status":"error","message":"Todos os itens já foram sorteados","code":"ALL_DRAWN"}';
           Exit;
         end;
 
@@ -3632,35 +3642,54 @@ end;
 {
   Dispara um sorteio.
 
-  Os dois impedimentos são checados antes de clicar no botão porque o
+  Os impedimentos são checados antes de clicar no botão porque o
   btSortearClick, sem itens para sortear, abre uma caixa de mensagem modal.
   Ela travaria a interface esperando o operador, e a requisição só sairia
   daqui por prazo esgotado.
+
+  O critério tem de ser o MESMO do programa, e ele olha vlSorteio - o mapa do
+  que ainda está disponível -, não a lbSorteio, que guarda todos os itens com
+  o sorteado apenas marcado. Com o bolo esgotado as duas respondem coisas
+  diferentes: a lista continua cheia e o bolo está vazio, e era por aí que a
+  caixa modal escapava.
+
+  A faixa inicial/final entra na conta porque o btSortearClick chama o
+  btAddSorteioClick antes de olhar o bolo, e isso devolve a faixa inteira para
+  ele - então faixa preenchida significa que haverá o que sortear.
 }
 procedure TfTransmitir.v2Draw(AResponseInfo: TIdHTTPResponseInfo;
   const acao: string);
 var
-  jaSorteando, semParticipantes, habilitado: Boolean;
+  jaSorteando, semParticipantes, todosSorteados, habilitado: Boolean;
 begin
   jaSorteando := False;
   semParticipantes := False;
+  todosSorteados := False;
   habilitado := True;
 
   if not executaNaInterface(
     procedure
+    var
+      boloVazio: Boolean;
     begin
       //tmrSortear liga durante a animação e se desliga ao final
       jaSorteando := DM.tmrSortear.Enabled;
       if jaSorteando then
         Exit;
 
-      //A faixa inicial/final também alimenta a lista, então lista vazia só
-      //impede de fato quando os dois campos de faixa estão vazios
-      semParticipantes := (fmIndex.lbSorteio.Items.Count = 0) and
-                          (Trim(fmIndex.opSort_Ini.Text) = '') and
-                          (Trim(fmIndex.opSort_Fin.Text) = '');
-      if semParticipantes then
+      boloVazio := (fmIndex.vlSorteio.Strings.Count = 0) and
+                   (Trim(fmIndex.opSort_Ini.Text) = '') and
+                   (Trim(fmIndex.opSort_Fin.Text) = '');
+
+      //Bolo vazio com a lista cheia quer dizer que tudo já saiu. São dois
+      //estados diferentes para quem chama: um pede itens, o outro pede
+      //restart.
+      if boloVazio then
+      begin
+        semParticipantes := (fmIndex.lbSorteio.Items.Count = 0);
+        todosSorteados := not semParticipantes;
         Exit;
+      end;
 
       habilitado := fmIndex.btSortear.Enabled;
       if not habilitado then
@@ -3683,7 +3712,15 @@ begin
   if semParticipantes then
   begin
     respondeV2Erro(AResponseInfo, 409, acao, 'EMPTY_PARTICIPANTS',
-      'Nenhum participante adicionado ao sorteio');
+      'Nenhum participante adicionado ao sorteio. Use action=add');
+    Exit;
+  end;
+
+  if todosSorteados then
+  begin
+    respondeV2Erro(AResponseInfo, 409, acao, 'ALL_DRAWN',
+      'Todos os itens já foram sorteados. Use action=restart para devolvê-los ' +
+      'ao bolo, ou action=add para acrescentar outros');
     Exit;
   end;
 
