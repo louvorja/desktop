@@ -214,7 +214,7 @@ implementation
 uses
   fmMusica, fmMenu, fmQRCode, dmComponentes, fmMonitorSorteio, fmVideoOn, Vcl.MPlayer,
   System.SyncObjs, System.StrUtils, System.IOUtils, System.Hash, IdURI, IdGlobal,
-  IdStack, Winapi.WinInet;
+  IdStack, Winapi.WinInet, uLiturgiaTroca;
 
 // ── Enumeração de interfaces de rede (iphlpapi) ─────────────────────────────
 
@@ -3123,17 +3123,22 @@ begin
   if not v2ExigeMetodo(ARequestInfo, AResponseInfo, acao, 'GET') then
     Exit;
 
-  //Dia da semana no formato do programa: 1 = domingo ... 7 = sábado
+  //Dia no formato do programa: 1 = domingo ... 7 = sábado, 8 = Avulsa.
+  //
+  //A Avulsa é a guia que recebe uma liturgia vinda de fora (um .llja) e não
+  //pertence à semana. Os limites vêm do uLiturgiaTroca para não ficarem
+  //escritos aqui: um nono dia, se existir um dia, entra sozinho.
   semanaTxt := Trim(v2Param(ARequestInfo, 'week'));
   if (semanaTxt = '') then
     semana := 0
   else
   begin
     semana := StrToIntDef(semanaTxt, -1);
-    if (semana < 1) or (semana > 7) then
+    if (semana < PRIMEIRO_DIA) or (semana > ULTIMO_DIA) then
     begin
       respondeV2Erro(AResponseInfo, 400, acao, 'INVALID_WEEK',
-        'Parâmetro week deve ser de 1 (domingo) a 7 (sábado)');
+        'Parâmetro week deve ser de ' + IntToStr(PRIMEIRO_DIA) +
+        ' (domingo) a 7 (sábado), ou ' + IntToStr(DIA_AVULSA) + ' (avulsa)');
       Exit;
     end;
   end;
@@ -3150,12 +3155,14 @@ begin
       chave, tipo, marcado, extra: string;
       temPlayback, escolhe: Boolean;
     begin
-      //Sem week explícito usa o dia que a tela está mostrando, ou hoje
+      //Sem week explícito usa o dia que a tela está mostrando, ou hoje.
+      //A Avulsa conta como dia mostrado: descartá-la faria a API responder
+      //por outro dia, calada, enquanto o operador olha para ela.
       if (semana = 0) then
       begin
         semana := StrToIntDef(
           fmIndex.loadCol.Strings.Values['LITURGIA:SEMANA'], 0);
-        if (semana < 1) or (semana > 7) then
+        if (semana < PRIMEIRO_DIA) or (semana > ULTIMO_DIA) then
           semana := DayOfWeek(Now);
       end;
 
@@ -3247,7 +3254,11 @@ begin
     ',"items":[' + itens + ']');
 end;
 
-//Em que dia da semana o item está. Zero quando não aparece em nenhum.
+//Em que dia o item está. Zero quando não aparece em nenhum.
+//
+//A varredura inclui a Avulsa (ULTIMO_DIA): sem ela, abrir um item que só
+//existe lá falharia com ITEM_NOT_LOADED sempre que a guia não estivesse
+//aberta - e funcionaria quando estivesse, que é o pior jeito de falhar.
 function TfTransmitir.v2LiturgyDiaDoItem(const chave: string): Integer;
 var
   lista: TStringList;
@@ -3257,7 +3268,8 @@ begin
   lista := TStringList.Create;
   try
     lista.Delimiter := ';';
-    for dia := 1 to 7 do
+    lista.StrictDelimiter := True;
+    for dia := PRIMEIRO_DIA to ULTIMO_DIA do
     begin
       lista.DelimitedText :=
         fmIndex.lerParam('Geral', IntToStr(dia), '', fmIndex.arq_liturgia);
