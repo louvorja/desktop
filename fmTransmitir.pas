@@ -4130,7 +4130,12 @@ begin
     Exit;
   end;
 
-  if SameText(rota, ROTA_V2 + '/drawing-number') then
+  //O sorteio é um só desde a unificação de nomes e números, então o nome da
+  //rota é /drawing. A /drawing-number continua atendendo, sem prazo para
+  //sair: há gente usando. O campo "action" da resposta devolve a rota que o
+  //cliente chamou, não a canônica.
+  if SameText(rota, ROTA_V2 + '/drawing') or
+     SameText(rota, ROTA_V2 + '/drawing-number') then
   begin
     v2DrawingNumber(ARequestInfo, AResponseInfo, acao);
     Exit;
