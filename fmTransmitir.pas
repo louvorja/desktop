@@ -3866,8 +3866,15 @@ end;
 {
   Abre uma música pelo ID.
 
-  O parâmetro "modo" substitui o "tag" numérico da v1, que era 1, 2 ou 3 sem
+  O parâmetro de modo substitui o "tag" numérico da v1, que era 1, 2 ou 3 sem
   nada no código nem na resposta explicando o que cada número fazia.
+
+  O nome canônico é "mode", com valor "no-audio", igual ao que a /liturgy já
+  usa. O "modo" com "sem-audio" veio antes, em português, e continua aceito
+  sem prazo para sair - há clientes usando. Mandando os dois, vale o "mode".
+
+  A resposta leva os DOIS campos pelo mesmo motivo: um cliente antigo lê
+  "modo" e um novo lê "mode", e nenhum dos dois quebra.
 }
 procedure TfTransmitir.v2OpenSong(ARequestInfo: TIdHTTPRequestInfo;
   AResponseInfo: TIdHTTPResponseInfo; const acao: string);
@@ -3887,7 +3894,9 @@ begin
     Exit;
   end;
 
-  modo := LowerCase(Trim(v2Param(ARequestInfo, 'modo')));
+  modo := LowerCase(Trim(v2Param(ARequestInfo, 'mode')));
+  if (modo = '') then
+    modo := LowerCase(Trim(v2Param(ARequestInfo, 'modo')));
   if (modo = '') then
     modo := 'normal';
 
@@ -3896,12 +3905,12 @@ begin
 
   if (modo = 'pb') then
     txtModo := 'PB'
-  else if (modo = 'sem-audio') then
+  else if (modo = 'no-audio') or (modo = 'sem-audio') then
     tocarAudio := False
   else if (modo <> 'normal') then
   begin
     respondeV2Erro(AResponseInfo, 400, acao, 'INVALID_MODE',
-      'Parâmetro modo deve ser normal, pb ou sem-audio');
+      'Parâmetro mode deve ser normal, pb ou no-audio');
     Exit;
   end;
 
@@ -3917,7 +3926,9 @@ begin
   end;
 
   respondeV2Ok(AResponseInfo, acao, 'SONG_OPENED', '',
-    '"id":' + IntToStr(idMusica) + ',"modo":"' + modo + '"');
+    '"id":' + IntToStr(idMusica) +
+    ',"mode":"' + modo + '"' +
+    ',"modo":"' + modo + '"');
 end;
 
 {
