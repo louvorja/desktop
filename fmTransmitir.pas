@@ -3433,6 +3433,57 @@ begin
   end;
 end;
 
+//Diz se o texto serve como item do sorteio.
+//
+//Função pura, sem VCL: porta para o Lazarus sem alteração.
+//
+//A regra existe por causa de como o bolo é guardado. vlSorteio e vlSorteados
+//são TValueListEditor, ou seja uma linha "nome=valor" por item, e o nome é o
+//próprio texto. Então:
+//
+//  - '=' quebra a chave. Gravar 'a=b' produz a linha 'a=b=3', que volta como
+//    nome 'a' e valor 'b=3'. A busca por 'a=b' não casa mais, o item entra
+//    duplicado, e no sorteio o StrToInt('b=3') levanta EConvertError dentro
+//    do tmrSortear - fora de qualquer tratamento, com a animação no ar;
+//  - CR/LF quebra a linha, com o mesmo efeito.
+//
+//Em vez de recusar só esses dois, a regra é lista branca: número, letra e
+//espaço. Letra inclui as acentuadas de propósito - sem elas "Maria José"
+//seria recusada, e o sorteio de nomes é justamente o que a unificação trouxe.
+function itemSorteioValido(const item: string): Boolean;
+var
+  i: Integer;
+  c: Char;
+begin
+  Result := False;
+  if (item = '') then
+    Exit;
+
+  for i := 1 to Length(item) do
+  begin
+    c := item[i];
+
+    if ((c >= '0') and (c <= '9')) or
+       ((c >= 'A') and (c <= 'Z')) or
+       ((c >= 'a') and (c <= 'z')) or
+       (c = ' ') then
+      Continue;
+
+    //Latin-1 acentuado, menos os dois sinais matemáticos que moram na faixa
+    //(× em $00D7 e ÷ em $00F7)
+    if (c >= #$00C0) and (c <= #$00FF) and (c <> #$00D7) and (c <> #$00F7) then
+      Continue;
+
+    //Latin Extended-A: resto dos alfabetos latinos acentuados
+    if (c >= #$0100) and (c <= #$017F) then
+      Continue;
+
+    Exit;
+  end;
+
+  Result := True;
+end;
+
 {
   Acrescenta itens ao sorteio.
 
@@ -3442,12 +3493,21 @@ end;
   Reaproveita os handlers do programa em vez de repetir a regra: eles já
   tratam item repetido, item que já foi sorteado voltando para o bolo, e a
   formatação do número em quatro dígitos.
+
+  Mas duas coisas o handler NÃO trata, e por isso são conferidas aqui:
+
+  - caractere que corrompe o mapa do bolo (ver itemSorteioValido);
+  - comprimento. O btAddSorteioNMClick faz Copy(texto, 0, MaxLength) e grava o
+    pedaço, calado. Pela API isso é pior que pela tela: a resposta diria
+    "added":1, o participants mostraria a forma cortada, e um remove com o
+    texto original devolveria 404. O limite é lido do próprio controle, para
+    não divergir do .dfm.
 }
 procedure TfTransmitir.v2DrawAdd(ARequestInfo: TIdHTTPRequestInfo;
   AResponseInfo: TIdHTTPResponseInfo; const acao: string);
 var
   txtDe, txtAte, item: string;
-  de, ate, antes, depois: Integer;
+  de, ate, antes, depois, limite: Integer;
 begin
   item := Trim(v2Param(ARequestInfo, 'item'));
   txtDe := Trim(v2Param(ARequestInfo, 'from'));
@@ -3457,6 +3517,13 @@ begin
   begin
     respondeV2Erro(AResponseInfo, 400, acao, 'MISSING_ITEM',
       'Informe item, ou uma faixa em from e to');
+    Exit;
+  end;
+
+  if (item <> '') and not itemSorteioValido(item) then
+  begin
+    respondeV2Erro(AResponseInfo, 400, acao, 'INVALID_ITEM',
+      'item aceita apenas letras, números e espaço');
     Exit;
   end;
 
@@ -3501,10 +3568,16 @@ begin
 
   antes := 0;
   depois := 0;
+  limite := 0;
 
   if not executaNaInterface(
     procedure
     begin
+      //O limite vem do próprio controle, para não divergir do .dfm
+      limite := fmIndex.opSort_Nm.MaxLength;
+      if (item <> '') and (limite > 0) and (Length(item) > limite) then
+        Exit;
+
       antes := fmIndex.lbSorteio.Items.Count;
 
       if (item <> '') then
@@ -3523,6 +3596,13 @@ begin
     end, TIMEOUT_COMANDO) then
   begin
     respondeV2Ocupado(AResponseInfo, acao);
+    Exit;
+  end;
+
+  if (item <> '') and (limite > 0) and (Length(item) > limite) then
+  begin
+    respondeV2Erro(AResponseInfo, 400, acao, 'ITEM_TOO_LONG',
+      'item passa do limite de ' + IntToStr(limite) + ' caracteres');
     Exit;
   end;
 
