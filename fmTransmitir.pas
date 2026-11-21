@@ -1805,6 +1805,7 @@ var
   tocando: Boolean;
   slideAtual, slideProximo: string;
   totalSlides: Integer;
+  temProximo: Boolean;
 begin
   acaoPedida := v2Acao(ARequestInfo);
 
@@ -1882,6 +1883,7 @@ begin
   slideAtual := '';
   slideProximo := '';
   totalSlides := 0;
+  temProximo := False;
 
   if not executaNaInterface(
     procedure
@@ -1893,8 +1895,11 @@ begin
       slideAtual := fMusica.lblLetra.Caption;
       totalSlides := fMusica.lbLetras.Items.Count;
 
-      //nslide aponta para o próximo da lista
-      if (fMusica.lbLetras.Items.Count > fMusica.nslide) then
+      //nslide aponta para o próximo da lista. "Existe próximo" é uma questão
+      //de índice, não de texto: um slide de pausa/imagem pode estar vazio e
+      //ainda assim ser um slide válido.
+      temProximo := fMusica.lbLetras.Items.Count > fMusica.nslide;
+      if temProximo then
         slideProximo := fMusica.lbLetras.Items[fMusica.nslide]
       else
         slideProximo := '';
@@ -1916,7 +1921,7 @@ begin
     respondeV2Ok(AResponseInfo, acao, 'SONG_PLAYING', '',
       '"playing":true' +
       ',"slide_count":' + IntToStr(totalSlides) +
-      ',"has_next":' + IfThen(slideProximo <> '', 'true', 'false'));
+      ',"has_next":' + IfThen(temProximo, 'true', 'false'));
     Exit;
   end;
 
@@ -1925,7 +1930,7 @@ begin
   if (qualSlide = 'next') then
     respondeV2Ok(AResponseInfo, acao, 'SONG_PLAYING', '',
       '"playing":true,"slide":"' + escapaJson(slideProximo) + '"' +
-      ',"which":"next","is_last":' + IfThen(slideProximo = '', 'true', 'false'))
+      ',"which":"next","is_last":' + IfThen(temProximo, 'false', 'true'))
   else
     respondeV2Ok(AResponseInfo, acao, 'SONG_PLAYING', '',
       '"playing":true,"slide":"' + escapaJson(slideAtual) + '","which":"current"');
